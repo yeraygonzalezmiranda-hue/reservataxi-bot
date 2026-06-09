@@ -9,10 +9,8 @@ const BASE_URL = process.env.BASE_URL || '';
 const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID || '898842399';
 const MONGODB_URI = process.env.MONGODB_URI;
 
-// Conectar a MongoDB
 mongoose.connect(MONGODB_URI).then(() => console.log('MongoDB conectado')).catch(err => console.error('Error MongoDB:', err));
 
-// Esquemas
 const conductorSchema = new mongoose.Schema({
   chatId: { type: String, unique: true },
   nombre: String,
@@ -22,7 +20,8 @@ const conductorSchema = new mongoose.Schema({
 
 const reservaSchema = new mongoose.Schema({
   datos: Object,
-  estado: { type: String, default: 'pendiente' }, // pendiente, asignada, cancelada
+  clienteChatId: String,
+  estado: { type: String, default: 'pendiente' },
   conductorAsignado: String,
   mensajesEnviados: [{ chatId: String, messageId: Number }],
   fechaCreacion: { type: Date, default: Date.now }
@@ -37,23 +36,20 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// Comando /start para conductores
 bot.onText(/\/start/, async (msg) => {
   const chatId = String(msg.chat.id);
   const nombre = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
 
-  // Si es el dueño
   if (chatId === OWNER_CHAT_ID) {
-    bot.sendMessage(chatId, '🚖 *Panel de administración*\n\nBienvenido, Yeray. Las reservas llegarán aquí automáticamente.', { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, '🚖 *Panel de administración*\n\nBienvenido, Yeray.', { parse_mode: 'Markdown' });
     return;
   }
 
-  // Registrar conductor si no existe
   try {
     const existente = await Conductor.findOne({ chatId });
     if (!existente) {
       await Conductor.create({ chatId, nombre });
-      bot.sendMessage(chatId, `✅ *¡Registrado correctamente!*\n\nHola ${nombre}, ya recibirás las reservas disponibles en este chat.\n\nCuando llegue una reserva verás los detalles y podrás aceptarla.`, { parse_mode: 'Markdown' });
+      bot.sendMessage(chatId, `✅ *¡Registrado correctamente!*\n\nHola ${nombre}, ya recibirás las reservas disponibles en este chat.`, { parse_mode: 'Markdown' });
       bot.sendMessage(OWNER_CHAT_ID, `🆕 Nuevo conductor registrado: *${nombre}* (ID: ${chatId})`, { parse_mode: 'Markdown' });
     } else {
       bot.sendMessage(chatId, `👋 Hola ${nombre}, ya estás registrado. Recibirás las próximas reservas aquí.`);
@@ -63,7 +59,6 @@ bot.onText(/\/start/, async (msg) => {
   }
 });
 
-// Manejar botones de aceptar/rechazar
 bot.on('callback_query', async (query) => {
   const chatId = String(query.message.chat.id);
   const messageId = query.message.message_id;
@@ -79,7 +74,6 @@ bot.on('callback_query', async (query) => {
         return;
       }
 
-      // Marcar como asignada
       reserva.estado = 'asignada';
       reserva.conductorAsignado = chatId;
       await reserva.save();
@@ -87,8 +81,8 @@ bot.on('callback_query', async (query) => {
       const conductor = await Conductor.findOne({ chatId });
       const nombreConductor = conductor ? conductor.nombre : 'Un conductor';
 
-      // Confirmar al conductor que aceptó
-      bot.editMessageText(`✅ *Reserva aceptada*\n\nHas aceptado este servicio. El cliente ha sido notificado.`, {
+      // Confirmar al conductor
+      bot.editMessageText(`✅ *Reserva aceptada*\n\nHas aceptado este servicio.`, {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown'
@@ -110,6 +104,24 @@ bot.on('callback_query', async (query) => {
         }
       }
 
+      // Confirmar al cliente si tenemos su chat ID
+      if (reserva.clienteChatId) {
+        const d = reserva.datos;
+        try {
+          bot.sendMessage(reserva.clienteChatId,
+            `✅ *¡Tu reserva ha sido aceptada!*\n\n` +
+            `📅 *Fecha:* ${d.fecha} a las ${d.hora}\n` +
+            `📍 *Origen:* ${d.origen}\n` +
+            `🏁 *Destino:* ${d.destino}\n\n` +
+            `🚖 Un conductor estará contigo a la hora indicada.\n` +
+            `📞 Para cualquier consulta: reservas@taxilaspalmasdegrancanaria.com`,
+            { parse_mode: 'Markdown' }
+          );
+        } catch (e) {
+          console.error('Error notificando al cliente:', e.message);
+        }
+      }
+
       bot.answerCallbackQuery(query.id, { text: '✅ ¡Reserva aceptada!' });
 
     } catch (err) {
@@ -120,7 +132,7 @@ bot.on('callback_query', async (query) => {
 
   if (data.startsWith('rechazar_')) {
     bot.answerCallbackQuery(query.id, { text: 'Has rechazado este servicio.' });
-    bot.editMessageText(`❌ *Servicio rechazado*\n\nHas rechazado este servicio.`, {
+    bot.editMessageText(`❌ *Servicio rechazado*`, {
       chat_id: chatId,
       message_id: messageId,
       parse_mode: 'Markdown'
@@ -142,27 +154,21 @@ function formatearReserva(data) {
   return msg;
 }
 
-// Recibir reserva del formulario
 app.post('/reserva', async (req, res) => {
-  const data = req.body;
+  const { clienteChatId, ...data } = req.body;
 
   try {
     const conductores = await Conductor.find({ activo: true });
 
     if (conductores.length === 0) {
-      // No hay conductores, solo notificar al dueño
-      await bot.sendMessage(OWNER_CHAT_ID, `🚖 *NUEVA RESERVA* (sin conductores disponibles)\n\n${formatearReserva(data)}`, { parse_mode: 'Markdown' });
+      await bot.sendMessage(OWNER_CHAT_ID, `🚖 *NUEVA RESERVA* (sin conductores)\n\n${formatearReserva(data)}`, { parse_mode: 'Markdown' });
       return res.json({ ok: true });
     }
 
-    // Crear reserva en BD
-    const reserva = await Reserva.create({ datos: data });
-
+    const reserva = await Reserva.create({ datos: data, clienteChatId: clienteChatId || null });
     const mensajesEnviados = [];
-
     const texto = `🚖 *NUEVA RESERVA DISPONIBLE*\n\n${formatearReserva(data)}\n⏰ Responde rápido para aceptarla.`;
 
-    // Enviar a cada conductor
     for (const conductor of conductores) {
       try {
         const msg = await bot.sendMessage(conductor.chatId, texto, {
@@ -180,11 +186,9 @@ app.post('/reserva', async (req, res) => {
       }
     }
 
-    // Guardar IDs de mensajes
     reserva.mensajesEnviados = mensajesEnviados;
     await reserva.save();
 
-    // Notificar al dueño
     await bot.sendMessage(OWNER_CHAT_ID, `📨 *Nueva reserva enviada a ${conductores.length} conductor(es)*\n\n${formatearReserva(data)}`, { parse_mode: 'Markdown' });
 
     res.json({ ok: true });
