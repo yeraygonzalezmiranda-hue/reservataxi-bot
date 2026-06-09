@@ -1,431 +1,298 @@
-const express = require('express');
-const TelegramBot = require('node-telegram-bot-api');
-const mongoose = require('mongoose');
-const path = require('path');
-const https = require('https');
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Reserva Taxi Las Palmas</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0a0a; color: #f0f0f0; min-height: 100vh; padding-bottom: 120px; }
+    header { background: linear-gradient(135deg, #1a1a1a 0%, #111 100%); border-bottom: 2px solid #f5c400; padding: 18px 20px 14px; text-align: center; }
+    header h1 { font-size: 15px; font-weight: 700; color: #f5c400; letter-spacing: 0.5px; text-transform: uppercase; }
+    header p { font-size: 12px; color: #aaa; margin-top: 2px; }
+    .form-container { max-width: 480px; margin: 0 auto; padding: 20px 16px; }
+    .section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: #f5c400; margin: 22px 0 10px; padding-left: 2px; }
+    .field { margin-bottom: 14px; }
+    label { display: block; font-size: 13px; color: #bbb; margin-bottom: 5px; font-weight: 500; }
+    input, select, textarea { width: 100%; padding: 12px 14px; background: #1c1c1c; border: 1px solid #333; border-radius: 10px; color: #f0f0f0; font-size: 15px; transition: border-color 0.2s; -webkit-appearance: none; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #f5c400; background: #222; }
+    input::placeholder, textarea::placeholder { color: #555; }
+    select option { background: #1c1c1c; color: #f0f0f0; }
+    textarea { resize: none; height: 80px; }
+    .airport-fields { display: none; background: #141414; border: 1px solid #2a2a1a; border-radius: 12px; padding: 14px; margin-top: 10px; }
+    .airport-fields.visible { display: block; }
+    .airport-tag { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #f5c400; margin-bottom: 12px; font-weight: 600; }
+    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .tarifa-box { display: none; background: #111; border: 1px solid #f5c400; border-radius: 12px; padding: 16px; margin-top: 10px; }
+    .tarifa-box.visible { display: block; }
+    .tarifa-titulo { font-size: 12px; color: #aaa; margin-bottom: 8px; }
+    .tarifa-precio { font-size: 28px; font-weight: 800; color: #f5c400; }
+    .tarifa-precio span { font-size: 14px; font-weight: 400; color: #aaa; }
+    .tarifa-detalle { font-size: 12px; color: #777; margin-top: 6px; }
+    .tarifa-tipo { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 20px; margin-top: 6px; }
+    .tarifa-diurna { background: #2a2200; color: #f5c400; }
+    .tarifa-nocturna { background: #1a1a2e; color: #8080ff; }
+    .tarifa-festiva { background: #2a0000; color: #ff6060; }
+    .calculando { font-size: 13px; color: #888; margin-top: 8px; }
+    .btn-submit { position: fixed; bottom: 0; left: 0; right: 0; padding: 14px 20px 28px; background: linear-gradient(to top, #0a0a0a 60%, transparent); }
+    button { width: 100%; padding: 15px; background: #f5c400; color: #0a0a0a; border: none; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; transition: opacity 0.2s, transform 0.1s; }
+    button:active { transform: scale(0.98); opacity: 0.9; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .toast { display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #1e3a1e; border: 1px solid #2d6a2d; color: #7dd87d; padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; z-index: 999; text-align: center; }
+    .error-msg { font-size: 12px; color: #e07070; margin-top: 4px; display: none; }
+    input.invalid, select.invalid { border-color: #e07070; }
+  </style>
+</head>
+<body>
 
-const TOKEN = process.env.BOT_TOKEN || '8707482336:AAETg0jJ6F5VgLcHCDYqeEHxemnZeALcMPI';
-const PORT = process.env.PORT || 3000;
-const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID || '898842399';
-const MONGODB_URI = process.env.MONGODB_URI;
-const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_KEY;
+<header>
+  <h1>Reserva Taxi Las Palmas</h1>
+  <p>Rellena el formulario para hacer tu reserva</p>
+</header>
 
-// =================== SCHEMAS ===================
+<div class="form-container">
 
-const conductorSchema = new mongoose.Schema({
-  chatId: { type: String, unique: true },
-  nombre: String,
-  activo: { type: Boolean, default: true },
-  fechaRegistro: { type: Date, default: Date.now }
-});
+  <div class="section-label">Tus datos</div>
 
-const reservaSchema = new mongoose.Schema({
-  datos: Object,
-  clienteChatId: String,
-  estado: { type: String, default: 'pendiente' },
-  conductorAsignado: String,
-  mensajesEnviados: [{ chatId: String, messageId: Number }],
-  recordatorioEnviado: { type: Boolean, default: false },
-  fechaServicio: Date,
-  fechaCreacion: { type: Date, default: Date.now }
-});
+  <div class="field">
+    <label>Nombre completo *</label>
+    <input type="text" id="nombre" placeholder="Ej. Juan García López" />
+    <div class="error-msg" id="err-nombre">Por favor introduce tu nombre</div>
+  </div>
 
-const festivoSchema = new mongoose.Schema({
-  fecha: { type: String, unique: true },
-  descripcion: String,
-  fechaCreacion: { type: Date, default: Date.now }
-});
+  <div class="field">
+    <label>Correo electrónico *</label>
+    <input type="email" id="correo" placeholder="ejemplo@correo.com" />
+    <div class="error-msg" id="err-correo">Correo no válido</div>
+  </div>
 
-const Conductor = mongoose.model('Conductor', conductorSchema);
-const Reserva = mongoose.model('Reserva', reservaSchema);
-const Festivo = mongoose.model('Festivo', festivoSchema);
+  <div class="field">
+    <label>Teléfono *</label>
+    <input type="tel" id="telefono" placeholder="+34 600 000 000" />
+    <div class="error-msg" id="err-telefono">Por favor introduce tu teléfono</div>
+  </div>
 
-mongoose.connect(MONGODB_URI).then(async () => {
-  console.log('MongoDB conectado');
-  await cargarFestivosIniciales();
-  iniciarRecordatorios();
-}).catch(err => console.error('Error MongoDB:', err));
+  <div class="section-label">Tu viaje</div>
 
-async function cargarFestivosIniciales() {
-  const count = await Festivo.countDocuments();
-  if (count === 0) {
-    await Festivo.insertMany([
-      { fecha: '2026-01-01', descripcion: 'Año Nuevo' },
-      { fecha: '2026-01-06', descripcion: 'Reyes' },
-      { fecha: '2026-02-19', descripcion: 'Carnaval jueves' },
-      { fecha: '2026-02-20', descripcion: 'Carnaval viernes' },
-      { fecha: '2026-04-02', descripcion: 'Jueves Santo' },
-      { fecha: '2026-04-03', descripcion: 'Viernes Santo' },
-      { fecha: '2026-05-01', descripcion: 'Día del Trabajo' },
-      { fecha: '2026-05-30', descripcion: 'Día de Canarias' },
-      { fecha: '2026-06-24', descripcion: 'San Juan' },
-      { fecha: '2026-08-15', descripcion: 'Asunción' },
-      { fecha: '2026-10-12', descripcion: 'Fiesta Nacional' },
-      { fecha: '2026-11-01', descripcion: 'Todos los Santos' },
-      { fecha: '2026-12-06', descripcion: 'Constitución' },
-      { fecha: '2026-12-08', descripcion: 'Inmaculada' },
-      { fecha: '2026-12-25', descripcion: 'Navidad' },
-    ]);
-    console.log('Festivos iniciales cargados');
-  }
-}
+  <div class="row-2">
+    <div class="field">
+      <label>Fecha *</label>
+      <input type="date" id="fecha" onchange="calcularTarifa()" />
+      <div class="error-msg" id="err-fecha">Selecciona fecha</div>
+    </div>
+    <div class="field">
+      <label>Hora *</label>
+      <input type="time" id="hora" onchange="calcularTarifa()" />
+      <div class="error-msg" id="err-hora">Selecciona hora</div>
+    </div>
+  </div>
 
-const app = express();
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+  <div class="field">
+    <label>Origen (dirección de recogida) *</label>
+    <input type="text" id="origen" placeholder="Ej. Aeropuerto LPA o C/ Mayor 5" oninput="checkAirport(); calcularTarifa()" />
+    <div class="error-msg" id="err-origen">Por favor introduce el origen</div>
+  </div>
 
-const bot = new TelegramBot(TOKEN, { polling: true });
+  <div class="airport-fields" id="airport-fields">
+    <div class="airport-tag">✈️ Recogida en aeropuerto</div>
+    <div class="field">
+      <label>Número de vuelo *</label>
+      <input type="text" id="vuelo" placeholder="Ej. IB3456" />
+    </div>
+    <div class="field">
+      <label>Número de pasaporte *</label>
+      <input type="text" id="pasaporte" placeholder="Ej. ABC123456" />
+    </div>
+  </div>
 
-// =================== TARIFAS ===================
+  <div class="field">
+    <label>Destino *</label>
+    <input type="text" id="destino" placeholder="Ej. Hotel Santa Catalina" oninput="calcularTarifa()" />
+    <div class="error-msg" id="err-destino">Por favor introduce el destino</div>
+  </div>
 
-async function determinarTarifa(fecha, hora) {
-  const horaNum = parseInt(hora.replace(':', ''));
-  const diaSemana = new Date(fecha + 'T12:00:00').getDay();
-  const esDomingo = diaSemana === 0;
-  const festivo = await Festivo.findOne({ fecha });
-  if (esDomingo || festivo) return 'festiva';
-  if (horaNum >= 600 && horaNum <= 2159) return 'diurna';
-  return 'nocturna';
-}
+  <div class="tarifa-box" id="tarifa-box">
+    <div class="tarifa-titulo">Precio estimado del trayecto</div>
+    <div class="tarifa-precio" id="tarifa-precio">--</div>
+    <div class="tarifa-detalle" id="tarifa-detalle"></div>
+    <div id="tarifa-tipo-badge"></div>
+  </div>
+  <div class="calculando" id="calculando" style="display:none">⏳ Calculando precio...</div>
 
-async function calcularDistanciaKm(origen, destino) {
-  return new Promise((resolve, reject) => {
-    const origenEnc = encodeURIComponent(origen + ', Las Palmas de Gran Canaria');
-    const destinoEnc = encodeURIComponent(destino + ', Las Palmas de Gran Canaria');
-    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origenEnc}&destinations=${destinoEnc}&key=${GOOGLE_MAPS_KEY}&language=es`;
-    https.get(url, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          const elemento = json.rows[0].elements[0];
-          if (elemento.status === 'OK') {
-            resolve(Math.round(elemento.distance.value / 100) / 10);
-          } else {
-            reject(new Error('Ruta no encontrada'));
-          }
-        } catch (e) { reject(e); }
-      });
-    }).on('error', reject);
-  });
-}
+  <div class="field" style="margin-top:14px">
+    <label>Número de pasajeros *</label>
+    <select id="pasajeros">
+      <option value="">Seleccionar...</option>
+      <option value="1">1 pasajero</option>
+      <option value="2">2 pasajeros</option>
+      <option value="3">3 pasajeros</option>
+      <option value="4">4 pasajeros</option>
+      <option value="5">5 pasajeros</option>
+      <option value="6">6 pasajeros</option>
+    </select>
+    <div class="error-msg" id="err-pasajeros">Selecciona el número de pasajeros</div>
+  </div>
 
-function calcularPrecio(distanciaKm, tipo, esAeropuerto) {
-  const precioBase = tipo === 'diurna' ? 3.85 : 4.25;
-  const precioPorKm = tipo === 'diurna' ? 1.35 : 1.55;
-  let precio = precioBase + (distanciaKm * precioPorKm);
-  if (esAeropuerto) precio += 2.10;
-  return Math.round(precio * 100) / 100;
-}
+  <div class="field">
+    <label>Observaciones</label>
+    <textarea id="observaciones" placeholder="Equipaje especial, silla de bebé, instrucciones..."></textarea>
+  </div>
 
-// =================== ENDPOINT TARIFAS ===================
+</div>
 
-app.post('/calcular-tarifa', async (req, res) => {
-  const { origen, destino, fecha, hora } = req.body;
-  try {
-    const distanciaKm = await calcularDistanciaKm(origen, destino);
-    const tipo = await determinarTarifa(fecha, hora);
-    const esAeropuerto =
-      origen.toLowerCase().includes('aeropuerto') || origen.toLowerCase().includes('lpa') || origen.toLowerCase().includes('gando') ||
-      destino.toLowerCase().includes('aeropuerto') || destino.toLowerCase().includes('lpa') || destino.toLowerCase().includes('gando');
-    const precio = calcularPrecio(distanciaKm, tipo, esAeropuerto);
-    res.json({
-      ok: true,
-      precio: precio.toFixed(2),
-      distanciaKm,
-      tipo,
-      precioBase: tipo === 'diurna' ? '3,85' : '4,25',
-      km: tipo === 'diurna' ? '1,35' : '1,55',
-      suplementoAeropuerto: esAeropuerto
-    });
-  } catch (err) {
-    console.error('Error tarifa:', err.message);
-    res.json({ ok: false, error: err.message });
-  }
-});
+<div class="btn-submit">
+  <button id="btn-enviar" onclick="enviarReserva()">Enviar reserva</button>
+</div>
 
-// =================== COMANDOS BOT ===================
+<div class="toast" id="toast">✅ Reserva enviada correctamente</div>
 
-bot.onText(/\/start/, async (msg) => {
-  const chatId = String(msg.chat.id);
-  const nombre = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
-  if (chatId === OWNER_CHAT_ID) {
-    bot.sendMessage(chatId,
-      '🚖 *Panel de Administración*\n\n' +
-      '📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n👥 /conductores\n📊 /resumen\n\n' +
-      '📅 *Festivos:*\n/festivos — Ver lista\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
-      { parse_mode: 'Markdown' }
-    );
-    return;
-  }
-  try {
-    const existente = await Conductor.findOne({ chatId });
-    if (!existente) {
-      await Conductor.create({ chatId, nombre });
-      bot.sendMessage(chatId, `✅ *¡Registrado correctamente!*\n\nHola ${nombre}, ya recibirás las reservas disponibles en este chat.`, { parse_mode: 'Markdown' });
-      bot.sendMessage(OWNER_CHAT_ID, `🆕 Nuevo conductor registrado: *${nombre}* (ID: ${chatId})`, { parse_mode: 'Markdown' });
+<script>
+  const tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : { expand:()=>{}, setHeaderColor:()=>{}, initDataUnsafe:{}, close:()=>{ alert("Reserva enviada"); } };
+  tg.expand();
+  //tg.setHeaderColor('#0a0a0a');
+
+  const now = new Date();
+  now.setHours(now.getHours() + 2);
+  document.getElementById('fecha').min = now.toISOString().split('T')[0];
+
+  var tarifaCalculada = null;
+  var calculandoTimer = null;
+
+  function checkAirport() {
+    const origen = document.getElementById('origen').value.toLowerCase();
+    const fields = document.getElementById('airport-fields');
+    if (origen.includes('aeropuerto') || origen.includes('airport') || origen.includes('lpa') || origen.includes('gando')) {
+      fields.classList.add('visible');
     } else {
-      bot.sendMessage(chatId, `👋 Hola ${nombre}, ya estás registrado.`);
-    }
-  } catch (err) { console.error(err); }
-});
-
-bot.onText(/\/festivos/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const festivos = await Festivo.find().sort({ fecha: 1 });
-  if (!festivos.length) return bot.sendMessage(OWNER_CHAT_ID, '📅 No hay festivos configurados.');
-  let texto = `📅 *FESTIVOS CONFIGURADOS (${festivos.length})*\n\n`;
-  festivos.forEach(f => { texto += `• ${f.fecha} — ${f.descripcion}\n`; });
-  bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/addfestivo (.+)/, async (msg, match) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const partes = match[1].trim().split(' ');
-  const fecha = partes[0];
-  const descripcion = partes.slice(1).join(' ') || 'Festivo';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-    return bot.sendMessage(OWNER_CHAT_ID, '❌ Formato incorrecto. Usa: /addfestivo 2026-12-25 Navidad');
-  }
-  try {
-    await Festivo.create({ fecha, descripcion });
-    bot.sendMessage(OWNER_CHAT_ID, `✅ Festivo añadido: *${fecha}* — ${descripcion}`, { parse_mode: 'Markdown' });
-  } catch (e) {
-    bot.sendMessage(OWNER_CHAT_ID, `⚠️ Esa fecha ya existe en la lista.`);
-  }
-});
-
-bot.onText(/\/delfestivo (.+)/, async (msg, match) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const fecha = match[1].trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-    return bot.sendMessage(OWNER_CHAT_ID, '❌ Formato incorrecto. Usa: /delfestivo 2026-12-25');
-  }
-  const resultado = await Festivo.deleteOne({ fecha });
-  if (resultado.deletedCount > 0) {
-    bot.sendMessage(OWNER_CHAT_ID, `✅ Festivo eliminado: *${fecha}*`, { parse_mode: 'Markdown' });
-  } else {
-    bot.sendMessage(OWNER_CHAT_ID, `❌ No se encontró el festivo ${fecha}`);
-  }
-});
-
-bot.onText(/\/pendientes/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const reservas = await Reserva.find({ estado: 'pendiente' }).sort({ fechaCreacion: -1 }).limit(10);
-  if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '📋 No hay reservas pendientes.');
-  let texto = `📋 *RESERVAS PENDIENTES (${reservas.length})*\n\n`;
-  reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n\n`; });
-  bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/asignadas/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const reservas = await Reserva.find({ estado: 'asignada' }).sort({ fechaCreacion: -1 }).limit(10);
-  if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '✅ No hay reservas asignadas.');
-  let texto = `✅ *RESERVAS ASIGNADAS (${reservas.length})*\n\n`;
-  reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n\n`; });
-  bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/canceladas/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const reservas = await Reserva.find({ estado: 'cancelada' }).sort({ fechaCreacion: -1 }).limit(10);
-  if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '❌ No hay reservas canceladas.');
-  let texto = `❌ *RESERVAS CANCELADAS (${reservas.length})*\n\n`;
-  reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n\n`; });
-  bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/conductores/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const conductores = await Conductor.find().sort({ fechaRegistro: -1 });
-  if (!conductores.length) return bot.sendMessage(OWNER_CHAT_ID, '👥 No hay conductores registrados.');
-  let texto = `👥 *CONDUCTORES (${conductores.length})*\n\n`;
-  conductores.forEach((c, i) => { texto += `*${i+1}.* ${c.nombre} — ${c.activo ? '🟢 Activo' : '🔴 Inactivo'}\n`; });
-  bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/resumen/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const hoy = new Date(); hoy.setHours(0,0,0,0);
-  const manana = new Date(hoy); manana.setDate(manana.getDate()+1);
-  const [pendientes, asignadas, canceladas, conductores] = await Promise.all([
-    Reserva.countDocuments({ estado: 'pendiente', fechaCreacion: { $gte: hoy, $lt: manana } }),
-    Reserva.countDocuments({ estado: 'asignada', fechaCreacion: { $gte: hoy, $lt: manana } }),
-    Reserva.countDocuments({ estado: 'cancelada', fechaCreacion: { $gte: hoy, $lt: manana } }),
-    Conductor.countDocuments({ activo: true })
-  ]);
-  bot.sendMessage(OWNER_CHAT_ID, `📊 *RESUMEN DE HOY*\n\n📋 Pendientes: ${pendientes}\n✅ Asignadas: ${asignadas}\n❌ Canceladas: ${canceladas}\n👥 Conductores activos: ${conductores}`, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/cancelar/, async (msg) => {
-  const chatId = String(msg.chat.id);
-  if (chatId === OWNER_CHAT_ID) return;
-  const reserva = await Reserva.findOne({ clienteChatId: chatId, estado: { $in: ['pendiente', 'asignada'] } }).sort({ fechaCreacion: -1 });
-  if (!reserva) return bot.sendMessage(chatId, '❌ No tienes ninguna reserva activa.');
-  const d = reserva.datos;
-  bot.sendMessage(chatId, `⚠️ *¿Cancelar esta reserva?*\n\n📅 ${d.fecha} a las ${d.hora}\n📍 ${d.origen} → ${d.destino}`, {
-    parse_mode: 'Markdown',
-    reply_markup: { inline_keyboard: [[
-      { text: '❌ Sí, cancelar', callback_data: `confirmar_cancelar_${reserva._id}` },
-      { text: '✅ No, mantener', callback_data: 'no_cancelar' }
-    ]]}
-  });
-});
-
-// =================== CALLBACKS ===================
-
-bot.on('callback_query', async (query) => {
-  const chatId = String(query.message.chat.id);
-  const messageId = query.message.message_id;
-  const data = query.data;
-
-  if (data.startsWith('aceptar_')) {
-    const reservaId = data.replace('aceptar_', '');
-    try {
-      const reserva = await Reserva.findById(reservaId);
-      if (!reserva || reserva.estado !== 'pendiente') {
-        bot.answerCallbackQuery(query.id, { text: '❌ Esta reserva ya fue asignada.', show_alert: true });
-        return;
-      }
-      reserva.estado = 'asignada';
-      reserva.conductorAsignado = chatId;
-      await reserva.save();
-      const conductor = await Conductor.findOne({ chatId });
-      const nombreConductor = conductor ? conductor.nombre : 'Un conductor';
-
-      bot.editMessageText(`✅ *Reserva aceptada*\n\nHas aceptado este servicio.`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-      bot.sendMessage(chatId, `📋 *Detalles del servicio:*\n\n${formatearReserva(reserva.datos, false)}`, { parse_mode: 'Markdown' });
-      bot.sendMessage(OWNER_CHAT_ID, `✅ *Reserva asignada*\n\nConductor: ${nombreConductor}\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
-
-      for (const msg of reserva.mensajesEnviados) {
-        if (msg.chatId !== chatId) {
-          try { bot.editMessageText(`⚠️ *Servicio ya asignado*`, { chat_id: msg.chatId, message_id: msg.messageId, parse_mode: 'Markdown' }); } catch (e) {}
-        }
-      }
-
-      if (reserva.clienteChatId) {
-        const d = reserva.datos;
-        const precioTxt = d.precioEstimado ? `\n💰 *Precio estimado:* ${d.precioEstimado} €` : '';
-        try {
-          bot.sendMessage(reserva.clienteChatId,
-            `✅ *¡Tu reserva ha sido aceptada!*\n\n📅 *Fecha:* ${d.fecha} a las ${d.hora}\n📍 *Origen:* ${d.origen}\n🏁 *Destino:* ${d.destino}${precioTxt}\n\n🚖 Un conductor estará contigo a la hora indicada.\n\n❌ Para cancelar escribe /cancelar`,
-            { parse_mode: 'Markdown' }
-          );
-        } catch (e) {}
-      }
-      bot.answerCallbackQuery(query.id, { text: '✅ ¡Reserva aceptada!' });
-    } catch (err) {
-      console.error(err);
-      bot.answerCallbackQuery(query.id, { text: 'Error. Inténtalo de nuevo.' });
+      fields.classList.remove('visible');
     }
   }
 
-  if (data.startsWith('rechazar_')) {
-    bot.answerCallbackQuery(query.id, { text: 'Has rechazado este servicio.' });
-    bot.editMessageText(`❌ *Servicio rechazado*`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-  }
+  function calcularTarifa() {
+    const origen = document.getElementById('origen').value.trim();
+    const destino = document.getElementById('destino').value.trim();
+    const fecha = document.getElementById('fecha').value;
+    const hora = document.getElementById('hora').value;
 
-  if (data.startsWith('confirmar_cancelar_')) {
-    const reservaId = data.replace('confirmar_cancelar_', '');
-    try {
-      const reserva = await Reserva.findById(reservaId);
-      if (!reserva || reserva.estado === 'cancelada') { bot.answerCallbackQuery(query.id, { text: 'Ya cancelada.' }); return; }
-      reserva.estado = 'cancelada';
-      await reserva.save();
-      bot.editMessageText(`❌ *Reserva cancelada correctamente.*`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-      bot.sendMessage(OWNER_CHAT_ID, `❌ *Reserva cancelada por el cliente*\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
-      if (reserva.conductorAsignado) {
-        try { bot.sendMessage(reserva.conductorAsignado, `❌ *Servicio cancelado*\n\nEl cliente canceló:\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}`, { parse_mode: 'Markdown' }); } catch (e) {}
-      }
-      bot.answerCallbackQuery(query.id, { text: '❌ Reserva cancelada' });
-    } catch (err) { console.error(err); }
-  }
+    if (!origen || !destino || !fecha || !hora) return;
+    if (origen.length < 5 || destino.length < 5) return;
 
-  if (data === 'no_cancelar') {
-    bot.editMessageText(`✅ Tu reserva sigue activa.`, { chat_id: chatId, message_id: messageId });
-    bot.answerCallbackQuery(query.id, { text: 'Cancelación abortada' });
-  }
-});
+    clearTimeout(calculandoTimer);
+    calculandoTimer = setTimeout(async () => {
+      document.getElementById('calculando').style.display = 'block';
+      document.getElementById('tarifa-box').classList.remove('visible');
 
-// =================== RECORDATORIOS ===================
-
-function iniciarRecordatorios() {
-  setInterval(async () => {
-    try {
-      const ahora = new Date();
-      const en60min = new Date(ahora.getTime() + 60 * 60 * 1000);
-      const en55min = new Date(ahora.getTime() + 55 * 60 * 1000);
-      const reservas = await Reserva.find({ estado: 'asignada', recordatorioEnviado: false, fechaServicio: { $gte: en55min, $lte: en60min } });
-      for (const reserva of reservas) {
-        try { bot.sendMessage(reserva.conductorAsignado, `⏰ *RECORDATORIO — Servicio en 1 hora*\n\n${formatearReserva(reserva.datos, false)}`, { parse_mode: 'Markdown' }); } catch (e) {}
-        bot.sendMessage(OWNER_CHAT_ID, `⏰ *Recordatorio enviado*\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
-        reserva.recordatorioEnviado = true;
-        await reserva.save();
-      }
-    } catch (err) { console.error('Error recordatorios:', err); }
-  }, 60 * 1000);
-}
-
-// =================== HELPERS ===================
-
-function formatearReserva(data, paraAdmin = false) {
-  let msg = `👤 *Nombre:* ${data.nombre}\n`;
-  if (paraAdmin) {
-    msg += `📧 *Correo:* ${data.correo}\n`;
-    msg += `📞 *Teléfono:* ${data.telefono}\n`;
-  }
-  msg += `📅 *Fecha:* ${data.fecha} a las ${data.hora}\n`;
-  msg += `📍 *Origen:* ${data.origen}\n`;
-  msg += `🏁 *Destino:* ${data.destino}\n`;
-  msg += `👥 *Pasajeros:* ${data.pasajeros}\n`;
-  if (data.precioEstimado) msg += `💰 *Precio estimado:* ${data.precioEstimado} €\n`;
-  if (data.vuelo) msg += `✈️ *Vuelo:* ${data.vuelo}\n`;
-  if (data.pasaporte) msg += `🛂 *Pasaporte:* ${data.pasaporte}\n`;
-  if (data.observaciones) msg += `📝 *Observaciones:* ${data.observaciones}\n`;
-  return msg;
-}
-
-// =================== RESERVAS ===================
-
-app.post('/reserva', async (req, res) => {
-  const { clienteChatId, ...data } = req.body;
-  let fechaServicio = null;
-  try { fechaServicio = new Date(`${data.fecha}T${data.hora}:00`); } catch (e) {}
-
-  try {
-    const conductores = await Conductor.find({ activo: true });
-    if (!conductores.length) {
-      await bot.sendMessage(OWNER_CHAT_ID, `🚖 *NUEVA RESERVA* (sin conductores)\n\n${formatearReserva(data, true)}`, { parse_mode: 'Markdown' });
-      return res.json({ ok: true });
-    }
-
-    const reserva = await Reserva.create({ datos: data, clienteChatId: clienteChatId || null, fechaServicio });
-    const mensajesEnviados = [];
-    const texto = `🚖 *NUEVA RESERVA DISPONIBLE*\n\n${formatearReserva(data, false)}\n⏰ Responde rápido para aceptarla.`;
-
-    for (const conductor of conductores) {
       try {
-        const msg = await bot.sendMessage(conductor.chatId, texto, {
-          parse_mode: 'Markdown',
-          reply_markup: { inline_keyboard: [[
-            { text: '✅ Aceptar', callback_data: `aceptar_${reserva._id}` },
-            { text: '❌ Rechazar', callback_data: `rechazar_${reserva._id}` }
-          ]]}
+        const res = await fetch('/calcular-tarifa', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ origen, destino, fecha, hora })
         });
-        mensajesEnviados.push({ chatId: conductor.chatId, messageId: msg.message_id });
-      } catch (e) { console.error(`Error enviando a conductor:`, e.message); }
-    }
+        const data = await res.json();
 
-    reserva.mensajesEnviados = mensajesEnviados;
-    await reserva.save();
-    await bot.sendMessage(OWNER_CHAT_ID, `📨 *Nueva reserva enviada a ${conductores.length} conductor(es)*\n\n${formatearReserva(data, true)}`, { parse_mode: 'Markdown' });
-    res.json({ ok: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false });
+        if (data.ok) {
+          tarifaCalculada = data;
+          document.getElementById('tarifa-precio').textContent = data.precio + ' €';
+          document.getElementById('tarifa-detalle').textContent = `${data.distanciaKm} km · Base ${data.precioBase}€ + ${data.km}€/km` + (data.suplementoAeropuerto ? ' + 2,10€ suplemento aeropuerto' : '');
+
+          let tipoClass = 'tarifa-diurna';
+          let tipoTexto = '☀️ Tarifa diurna';
+          if (data.tipo === 'nocturna') { tipoClass = 'tarifa-nocturna'; tipoTexto = '🌙 Tarifa nocturna'; }
+          if (data.tipo === 'festiva') { tipoClass = 'tarifa-festiva'; tipoTexto = '🎉 Tarifa festiva/domingo'; }
+
+          document.getElementById('tarifa-tipo-badge').innerHTML = `<span class="tarifa-tipo ${tipoClass}">${tipoTexto}</span>`;
+          document.getElementById('tarifa-box').classList.add('visible');
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
+      document.getElementById('calculando').style.display = 'none';
+    }, 1000);
   }
-});
 
-app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
+  function validar() {
+    let ok = true;
+    const campos = ['nombre', 'correo', 'telefono', 'fecha', 'hora', 'origen', 'destino', 'pasajeros'];
+    campos.forEach(id => {
+      const el = document.getElementById(id);
+      const err = document.getElementById('err-' + id);
+      if (!el.value.trim()) {
+        el.classList.add('invalid');
+        if (err) err.style.display = 'block';
+        ok = false;
+      } else {
+        el.classList.remove('invalid');
+        if (err) err.style.display = 'none';
+      }
+    });
+    const correo = document.getElementById('correo').value;
+    if (correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) {
+      document.getElementById('correo').classList.add('invalid');
+      document.getElementById('err-correo').style.display = 'block';
+      ok = false;
+    }
+    const airportVisible = document.getElementById('airport-fields').classList.contains('visible');
+    if (airportVisible) {
+      ['vuelo', 'pasaporte'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el.value.trim()) { el.classList.add('invalid'); ok = false; }
+        else el.classList.remove('invalid');
+      });
+    }
+    return ok;
+  }
+
+  async function enviarReserva() {
+    if (!validar()) return;
+
+    const btn = document.getElementById('btn-enviar');
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+
+    const airportVisible = document.getElementById('airport-fields').classList.contains('visible');
+    const clienteChatId = tg.initDataUnsafe?.user?.id ? String(tg.initDataUnsafe.user.id) : null;
+
+    const datos = {
+      clienteChatId,
+      nombre: document.getElementById('nombre').value.trim(),
+      correo: document.getElementById('correo').value.trim(),
+      telefono: document.getElementById('telefono').value.trim(),
+      fecha: document.getElementById('fecha').value,
+      hora: document.getElementById('hora').value,
+      origen: document.getElementById('origen').value.trim(),
+      destino: document.getElementById('destino').value.trim(),
+      pasajeros: document.getElementById('pasajeros').value,
+      observaciones: document.getElementById('observaciones').value.trim(),
+      vuelo: airportVisible ? document.getElementById('vuelo').value.trim() : '',
+      pasaporte: airportVisible ? document.getElementById('pasaporte').value.trim() : '',
+      precioEstimado: tarifaCalculada ? tarifaCalculada.precio : null,
+      tarifaTipo: tarifaCalculada ? tarifaCalculada.tipo : null
+    };
+
+    try {
+      const res = await fetch('/reserva', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+
+      if (res.ok) {
+        document.getElementById('toast').style.display = 'block';
+        setTimeout(() => tg.close(), 2500);
+      } else {
+        alert('Error al enviar. Inténtalo de nuevo.');
+        btn.disabled = false;
+        btn.textContent = 'Enviar reserva';
+      }
+    } catch (e) {
+      alert('Error de conexión. Inténtalo de nuevo.');
+      btn.disabled = false;
+      btn.textContent = 'Enviar reserva';
+    }
+  }
+</script>
+
+</body>
+</html>
