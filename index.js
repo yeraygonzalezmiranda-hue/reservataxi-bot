@@ -12,14 +12,12 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_KEY;
 const COMISION_PORCENTAJE = 10;
 
-// =================== EMAIL ===================
-
 const mailer = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.hostinger.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.SMTP_PORT || '465'),
   secure: true,
   auth: {
-    user: process.env.SMTP_USER || 'reservas@taxilaspalmasdegrancanaria.com',
+    user: process.env.SMTP_USER || 'reservadetaxilp@gmail.com',
     pass: process.env.SMTP_PASS
   }
 });
@@ -28,7 +26,7 @@ async function enviarEmailConfirmacion(datos) {
   if (!datos.correo) return;
   try {
     await mailer.sendMail({
-      from: '"Reserva Taxi Las Palmas" <reservas@taxilaspalmasdegrancanaria.com>',
+      from: '"Reserva Taxi Las Palmas" <reservadetaxilp@gmail.com>',
       to: datos.correo,
       subject: '✅ Tu reserva de taxi ha sido confirmada',
       html: `
@@ -60,8 +58,6 @@ async function enviarEmailConfirmacion(datos) {
     console.error('Error email:', err.message);
   }
 }
-
-// =================== SCHEMAS ===================
 
 const conductorSchema = new mongoose.Schema({
   chatId: { type: String, unique: true },
@@ -140,8 +136,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// =================== TARIFAS ===================
-
 async function determinarTarifa(fecha, hora) {
   const horaNum = parseInt(hora.replace(':', ''));
   const diaSemana = new Date(fecha + 'T12:00:00').getDay();
@@ -207,8 +201,6 @@ app.post('/calcular-tarifa', async (req, res) => {
   }
 });
 
-// =================== COMISIONES ===================
-
 async function registrarComision(reserva, conductorChatId) {
   const precio = parseFloat(reserva.datos.precioEstimado);
   if (!precio || precio <= 0) return;
@@ -261,10 +253,7 @@ function iniciarResumenMensual() {
         resumenAdmin += `👤 *${conductor.nombre}*\n   Carreras: ${resumen.carreras} | Facturado: ${resumen.totalCarreras}€ | Comisión: ${resumen.totalComision}€\n\n`;
         try {
           await bot.sendMessage(conductor.chatId,
-            `📊 *RESUMEN DE ${nombreMes.toUpperCase()}*\n\n` +
-            `Has realizado *${resumen.carreras} carrera(s)* por un total de *${resumen.totalCarreras}€*.\n\n` +
-            `💰 Tu comisión pendiente del mes: *${resumen.totalComision}€*\n\n` +
-            `Por favor realiza el ingreso antes del día 7.\nIBAN: ES53 0049 0359 9924 1643 2863`,
+            `📊 *RESUMEN DE ${nombreMes.toUpperCase()}*\n\nHas realizado *${resumen.carreras} carrera(s)* por un total de *${resumen.totalCarreras}€*.\n\n💰 Tu comisión pendiente del mes: *${resumen.totalComision}€*\n\nPor favor realiza el ingreso antes del día 7.\nIBAN: ES53 0049 0359 9924 1643 2863`,
             { parse_mode: 'Markdown' }
           );
         } catch (e) {}
@@ -275,17 +264,12 @@ function iniciarResumenMensual() {
   }, 5 * 60 * 1000);
 }
 
-// =================== COMANDOS BOT ===================
-
 bot.onText(/\/start/, async (msg) => {
   const chatId = String(msg.chat.id);
   const nombre = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
   if (chatId === OWNER_CHAT_ID) {
     bot.sendMessage(chatId,
-      '🚖 *Panel de Administración*\n\n' +
-      '📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n👥 /conductores\n📊 /resumen\n\n' +
-      '💰 *Comisiones:*\n/deudas\n/pagado NombreConductor\n\n' +
-      '📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
+      '🚖 *Panel de Administración*\n\n📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n👥 /conductores\n📊 /resumen\n\n💰 *Comisiones:*\n/deudas\n/pagado NombreConductor\n\n📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
       { parse_mode: 'Markdown' }
     );
     return;
@@ -433,8 +417,6 @@ bot.onText(/\/cancelar/, async (msg) => {
   });
 });
 
-// =================== CALLBACKS ===================
-
 bot.on('callback_query', async (query) => {
   const chatId = String(query.message.chat.id);
   const messageId = query.message.message_id;
@@ -451,7 +433,6 @@ bot.on('callback_query', async (query) => {
       reserva.estado = 'asignada';
       reserva.conductorAsignado = chatId;
       await reserva.save();
-
       const conductor = await Conductor.findOne({ chatId });
       const nombreConductor = conductor ? conductor.nombre : 'Un conductor';
       const comision = await registrarComision(reserva, chatId);
@@ -467,7 +448,6 @@ bot.on('callback_query', async (query) => {
         }
       }
 
-      // Notificar al cliente por Telegram si tiene cuenta
       if (reserva.clienteChatId) {
         const d = reserva.datos;
         const precioTxt = d.precioEstimado ? `\n💰 *Precio estimado:* ${d.precioEstimado} €` : '';
@@ -479,7 +459,6 @@ bot.on('callback_query', async (query) => {
         } catch (e) {}
       }
 
-      // Enviar email si la reserva viene de la web o no tiene Telegram
       if (!reserva.clienteChatId || reserva.datos.fuente === 'web') {
         await enviarEmailConfirmacion(reserva.datos);
       }
@@ -518,8 +497,6 @@ bot.on('callback_query', async (query) => {
   }
 });
 
-// =================== RECORDATORIOS ===================
-
 function iniciarRecordatorios() {
   setInterval(async () => {
     try {
@@ -537,8 +514,6 @@ function iniciarRecordatorios() {
   }, 60 * 1000);
 }
 
-// =================== HELPERS ===================
-
 function formatearReserva(data, paraAdmin = false) {
   let msg = `👤 *Nombre:* ${data.nombre}\n`;
   if (paraAdmin) {
@@ -555,8 +530,6 @@ function formatearReserva(data, paraAdmin = false) {
   if (data.observaciones) msg += `📝 *Observaciones:* ${data.observaciones}\n`;
   return msg;
 }
-
-// =================== RESERVAS ===================
 
 app.post('/reserva', async (req, res) => {
   const { clienteChatId, ...data } = req.body;
@@ -589,7 +562,7 @@ app.post('/reserva', async (req, res) => {
 
     reserva.mensajesEnviados = mensajesEnviados;
     await reserva.save();
-    await bot.sendMessage(OWNER_CHAT_ID, `📨 *Nueva reserva de ${conductores.length} conductor(es)*\n\n${formatearReserva(data, true)}`, { parse_mode: 'Markdown' });
+    await bot.sendMessage(OWNER_CHAT_ID, `📨 *Nueva reserva enviada a ${conductores.length} conductor(es)*\n\n${formatearReserva(data, true)}`, { parse_mode: 'Markdown' });
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
