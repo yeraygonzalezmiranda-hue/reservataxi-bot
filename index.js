@@ -81,12 +81,15 @@ bot.on('callback_query', async (query) => {
       const conductor = await Conductor.findOne({ chatId });
       const nombreConductor = conductor ? conductor.nombre : 'Un conductor';
 
-      // Confirmar al conductor
+      // Confirmar al conductor (quitar botones del mensaje original)
       bot.editMessageText(`✅ *Reserva aceptada*\n\nHas aceptado este servicio.`, {
         chat_id: chatId,
         message_id: messageId,
         parse_mode: 'Markdown'
       });
+
+      // Enviar segundo mensaje con todos los detalles al conductor
+      bot.sendMessage(chatId, `📋 *Detalles del servicio:*\n\n${formatearReserva(reserva.datos)}`, { parse_mode: 'Markdown' });
 
       // Notificar al dueño
       bot.sendMessage(OWNER_CHAT_ID, `✅ *Reserva asignada*\n\nConductor: ${nombreConductor}\n\n${formatearReserva(reserva.datos)}`, { parse_mode: 'Markdown' });
