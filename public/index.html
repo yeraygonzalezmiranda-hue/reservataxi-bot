@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Reserva Taxi Las Palmas De Gran Canaria</title>
+  <title>Reserva Taxi Las Palmas</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -21,11 +21,6 @@
       border-bottom: 2px solid #f5c400;
       padding: 18px 20px 14px;
       text-align: center;
-    }
-
-    header img {
-      height: 56px;
-      margin-bottom: 6px;
     }
 
     header h1 {
@@ -288,7 +283,6 @@
   tg.expand();
   tg.setHeaderColor('#0a0a0a');
 
-  // Fecha mínima = hoy + 2 horas
   const now = new Date();
   now.setHours(now.getHours() + 2);
   document.getElementById('fecha').min = now.toISOString().split('T')[0];
@@ -305,7 +299,6 @@
 
   function validar() {
     let ok = true;
-
     const campos = ['nombre', 'correo', 'telefono', 'fecha', 'hora', 'origen', 'destino', 'pasajeros'];
     campos.forEach(id => {
       const el = document.getElementById(id);
@@ -320,7 +313,6 @@
       }
     });
 
-    // Validar correo
     const correo = document.getElementById('correo').value;
     if (correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) {
       document.getElementById('correo').classList.add('invalid');
@@ -328,7 +320,6 @@
       ok = false;
     }
 
-    // Validar campos aeropuerto si visible
     const airportVisible = document.getElementById('airport-fields').classList.contains('visible');
     if (airportVisible) {
       ['vuelo', 'pasaporte'].forEach(id => {
@@ -349,8 +340,10 @@
     if (!validar()) return;
 
     const airportVisible = document.getElementById('airport-fields').classList.contains('visible');
+    const clienteChatId = tg.initDataUnsafe?.user?.id ? String(tg.initDataUnsafe.user.id) : null;
 
     const datos = {
+      clienteChatId,
       nombre: document.getElementById('nombre').value.trim(),
       correo: document.getElementById('correo').value.trim(),
       telefono: document.getElementById('telefono').value.trim(),
