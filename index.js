@@ -14,7 +14,7 @@ const COMISION_PORCENTAJE = 10;
 
 const mailer = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
+  port: parseInt(process.env.SMTP_PORT || '465'),
   secure: true,
   auth: {
     user: process.env.SMTP_USER || 'reservadetaxilp@gmail.com',
