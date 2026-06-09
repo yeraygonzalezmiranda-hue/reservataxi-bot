@@ -88,11 +88,11 @@ bot.on('callback_query', async (query) => {
         parse_mode: 'Markdown'
       });
 
-      // Enviar segundo mensaje con todos los detalles al conductor
-      bot.sendMessage(chatId, `📋 *Detalles del servicio:*\n\n${formatearReserva(reserva.datos)}`, { parse_mode: 'Markdown' });
+      // Enviar segundo mensaje con detalles al conductor (sin teléfono ni correo)
+      bot.sendMessage(chatId, `📋 *Detalles del servicio:*\n\n${formatearReserva(reserva.datos, false)}`, { parse_mode: 'Markdown' });
 
-      // Notificar al dueño
-      bot.sendMessage(OWNER_CHAT_ID, `✅ *Reserva asignada*\n\nConductor: ${nombreConductor}\n\n${formatearReserva(reserva.datos)}`, { parse_mode: 'Markdown' });
+      // Notificar al dueño (con todos los datos)
+      bot.sendMessage(OWNER_CHAT_ID, `✅ *Reserva asignada*\n\nConductor: ${nombreConductor}\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
 
       // Notificar a los demás conductores
       for (const msg of reserva.mensajesEnviados) {
@@ -143,10 +143,12 @@ bot.on('callback_query', async (query) => {
   }
 });
 
-function formatearReserva(data) {
+function formatearReserva(data, paraAdmin = false) {
   let msg = `👤 *Nombre:* ${data.nombre}\n`;
-  msg += `📧 *Correo:* ${data.correo}\n`;
-  msg += `📞 *Teléfono:* ${data.telefono}\n`;
+  if (paraAdmin) {
+    msg += `📧 *Correo:* ${data.correo}\n`;
+    msg += `📞 *Teléfono:* ${data.telefono}\n`;
+  }
   msg += `📅 *Fecha:* ${data.fecha} a las ${data.hora}\n`;
   msg += `📍 *Origen:* ${data.origen}\n`;
   msg += `🏁 *Destino:* ${data.destino}\n`;
@@ -164,13 +166,13 @@ app.post('/reserva', async (req, res) => {
     const conductores = await Conductor.find({ activo: true });
 
     if (conductores.length === 0) {
-      await bot.sendMessage(OWNER_CHAT_ID, `🚖 *NUEVA RESERVA* (sin conductores)\n\n${formatearReserva(data)}`, { parse_mode: 'Markdown' });
+      await bot.sendMessage(OWNER_CHAT_ID, `🚖 *NUEVA RESERVA* (sin conductores)\n\n${formatearReserva(data, true)}`, { parse_mode: 'Markdown' });
       return res.json({ ok: true });
     }
 
     const reserva = await Reserva.create({ datos: data, clienteChatId: clienteChatId || null });
     const mensajesEnviados = [];
-    const texto = `🚖 *NUEVA RESERVA DISPONIBLE*\n\n${formatearReserva(data)}\n⏰ Responde rápido para aceptarla.`;
+    const texto = `🚖 *NUEVA RESERVA DISPONIBLE*\n\n${formatearReserva(data, false)}\n⏰ Responde rápido para aceptarla.`;
 
     for (const conductor of conductores) {
       try {
@@ -192,7 +194,7 @@ app.post('/reserva', async (req, res) => {
     reserva.mensajesEnviados = mensajesEnviados;
     await reserva.save();
 
-    await bot.sendMessage(OWNER_CHAT_ID, `📨 *Nueva reserva enviada a ${conductores.length} conductor(es)*\n\n${formatearReserva(data)}`, { parse_mode: 'Markdown' });
+    await bot.sendMessage(OWNER_CHAT_ID, `📨 *Nueva reserva enviada a ${conductores.length} conductor(es)*\n\n${formatearReserva(data, true)}`, { parse_mode: 'Markdown' });
 
     res.json({ ok: true });
   } catch (err) {
