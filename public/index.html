@@ -1,1 +1,388 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Reserva Taxi Las Palmas</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0a0a0a;
+      color: #f0f0f0;
+      min-height: 100vh;
+      padding-bottom: 100px;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1a1a1a 0%, #111 100%);
+      border-bottom: 2px solid #f5c400;
+      padding: 18px 20px 14px;
+      text-align: center;
+    }
+
+    header img {
+      height: 56px;
+      margin-bottom: 6px;
+    }
+
+    header h1 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #f5c400;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    header p {
+      font-size: 12px;
+      color: #aaa;
+      margin-top: 2px;
+    }
+
+    .form-container {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 20px 16px;
+    }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: #f5c400;
+      margin: 22px 0 10px;
+      padding-left: 2px;
+    }
+
+    .field {
+      margin-bottom: 14px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: #bbb;
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 12px 14px;
+      background: #1c1c1c;
+      border: 1px solid #333;
+      border-radius: 10px;
+      color: #f0f0f0;
+      font-size: 15px;
+      transition: border-color 0.2s;
+      -webkit-appearance: none;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #f5c400;
+      background: #222;
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: #555;
+    }
+
+    select option {
+      background: #1c1c1c;
+      color: #f0f0f0;
+    }
+
+    textarea {
+      resize: none;
+      height: 80px;
+    }
+
+    .airport-fields {
+      display: none;
+      background: #141414;
+      border: 1px solid #2a2a1a;
+      border-radius: 12px;
+      padding: 14px;
+      margin-top: 10px;
+    }
+
+    .airport-fields.visible {
+      display: block;
+    }
+
+    .airport-tag {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #f5c400;
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+
+    .row-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .btn-submit {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 14px 20px 28px;
+      background: linear-gradient(to top, #0a0a0a 60%, transparent);
+    }
+
+    button {
+      width: 100%;
+      padding: 15px;
+      background: #f5c400;
+      color: #0a0a0a;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+
+    button:active {
+      transform: scale(0.98);
+      opacity: 0.9;
+    }
+
+    .toast {
+      display: none;
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e3a1e;
+      border: 1px solid #2d6a2d;
+      color: #7dd87d;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      z-index: 999;
+      text-align: center;
+    }
+
+    .error-msg {
+      font-size: 12px;
+      color: #e07070;
+      margin-top: 4px;
+      display: none;
+    }
+
+    input.invalid, select.invalid {
+      border-color: #e07070;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Reserva Taxi Las Palmas</h1>
+  <p>Rellena el formulario para hacer tu reserva</p>
+</header>
+
+<div class="form-container">
+
+  <div class="section-label">Tus datos</div>
+
+  <div class="field">
+    <label>Nombre completo *</label>
+    <input type="text" id="nombre" placeholder="Ej. Juan García López" />
+    <div class="error-msg" id="err-nombre">Por favor introduce tu nombre</div>
+  </div>
+
+  <div class="field">
+    <label>Correo electrónico *</label>
+    <input type="email" id="correo" placeholder="ejemplo@correo.com" />
+    <div class="error-msg" id="err-correo">Correo no válido</div>
+  </div>
+
+  <div class="field">
+    <label>Teléfono *</label>
+    <input type="tel" id="telefono" placeholder="+34 600 000 000" />
+    <div class="error-msg" id="err-telefono">Por favor introduce tu teléfono</div>
+  </div>
+
+  <div class="section-label">Tu viaje</div>
+
+  <div class="row-2">
+    <div class="field">
+      <label>Fecha *</label>
+      <input type="date" id="fecha" />
+      <div class="error-msg" id="err-fecha">Selecciona fecha</div>
+    </div>
+    <div class="field">
+      <label>Hora *</label>
+      <input type="time" id="hora" />
+      <div class="error-msg" id="err-hora">Selecciona hora</div>
+    </div>
+  </div>
+
+  <div class="field">
+    <label>Origen (dirección de recogida) *</label>
+    <input type="text" id="origen" placeholder="Ej. Aeropuerto LPA o C/ Mayor 5" oninput="checkAirport()" />
+    <div class="error-msg" id="err-origen">Por favor introduce el origen</div>
+  </div>
+
+  <div class="airport-fields" id="airport-fields">
+    <div class="airport-tag">✈️ Recogida en aeropuerto</div>
+    <div class="field">
+      <label>Número de vuelo *</label>
+      <input type="text" id="vuelo" placeholder="Ej. IB3456" />
+    </div>
+    <div class="field">
+      <label>Número de pasaporte *</label>
+      <input type="text" id="pasaporte" placeholder="Ej. ABC123456" />
+    </div>
+  </div>
+
+  <div class="field">
+    <label>Destino *</label>
+    <input type="text" id="destino" placeholder="Ej. Hotel Santa Catalina" />
+    <div class="error-msg" id="err-destino">Por favor introduce el destino</div>
+  </div>
+
+  <div class="field">
+    <label>Número de pasajeros *</label>
+    <select id="pasajeros">
+      <option value="">Seleccionar...</option>
+      <option value="1">1 pasajero</option>
+      <option value="2">2 pasajeros</option>
+      <option value="3">3 pasajeros</option>
+      <option value="4">4 pasajeros</option>
+      <option value="5">5 pasajeros</option>
+      <option value="6">6 pasajeros</option>
+    </select>
+    <div class="error-msg" id="err-pasajeros">Selecciona el número de pasajeros</div>
+  </div>
+
+  <div class="field">
+    <label>Observaciones</label>
+    <textarea id="observaciones" placeholder="Equipaje especial, silla de bebé, instrucciones..."></textarea>
+  </div>
+
+</div>
+
+<div class="btn-submit">
+  <button onclick="enviarReserva()">Enviar reserva</button>
+</div>
+
+<div class="toast" id="toast">✅ Reserva enviada correctamente</div>
+
+<script>
+  const tg = window.Telegram.WebApp;
+  tg.expand();
+  tg.setHeaderColor('#0a0a0a');
+
+  // Fecha mínima = hoy + 2 horas
+  const now = new Date();
+  now.setHours(now.getHours() + 2);
+  document.getElementById('fecha').min = now.toISOString().split('T')[0];
+
+  function checkAirport() {
+    const origen = document.getElementById('origen').value.toLowerCase();
+    const fields = document.getElementById('airport-fields');
+    if (origen.includes('aeropuerto') || origen.includes('airport') || origen.includes('lpa') || origen.includes('gando')) {
+      fields.classList.add('visible');
+    } else {
+      fields.classList.remove('visible');
+    }
+  }
+
+  function validar() {
+    let ok = true;
+
+    const campos = ['nombre', 'correo', 'telefono', 'fecha', 'hora', 'origen', 'destino', 'pasajeros'];
+    campos.forEach(id => {
+      const el = document.getElementById(id);
+      const err = document.getElementById('err-' + id);
+      if (!el.value.trim()) {
+        el.classList.add('invalid');
+        if (err) err.style.display = 'block';
+        ok = false;
+      } else {
+        el.classList.remove('invalid');
+        if (err) err.style.display = 'none';
+      }
+    });
+
+    // Validar correo
+    const correo = document.getElementById('correo').value;
+    if (correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) {
+      document.getElementById('correo').classList.add('invalid');
+      document.getElementById('err-correo').style.display = 'block';
+      ok = false;
+    }
+
+    // Validar campos aeropuerto si visible
+    const airportVisible = document.getElementById('airport-fields').classList.contains('visible');
+    if (airportVisible) {
+      ['vuelo', 'pasaporte'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el.value.trim()) {
+          el.classList.add('invalid');
+          ok = false;
+        } else {
+          el.classList.remove('invalid');
+        }
+      });
+    }
+
+    return ok;
+  }
+
+  async function enviarReserva() {
+    if (!validar()) return;
+
+    const airportVisible = document.getElementById('airport-fields').classList.contains('visible');
+
+    const datos = {
+      nombre: document.getElementById('nombre').value.trim(),
+      correo: document.getElementById('correo').value.trim(),
+      telefono: document.getElementById('telefono').value.trim(),
+      fecha: document.getElementById('fecha').value,
+      hora: document.getElementById('hora').value,
+      origen: document.getElementById('origen').value.trim(),
+      destino: document.getElementById('destino').value.trim(),
+      pasajeros: document.getElementById('pasajeros').value,
+      observaciones: document.getElementById('observaciones').value.trim(),
+      vuelo: airportVisible ? document.getElementById('vuelo').value.trim() : '',
+      pasaporte: airportVisible ? document.getElementById('pasaporte').value.trim() : ''
+    };
+
+    try {
+      const res = await fetch('/reserva', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      });
+
+      if (res.ok) {
+        const toast = document.getElementById('toast');
+        toast.style.display = 'block';
+        setTimeout(() => tg.close(), 2500);
+      } else {
+        alert('Error al enviar. Inténtalo de nuevo.');
+      }
+    } catch (e) {
+      alert('Error de conexión. Inténtalo de nuevo.');
+    }
+  }
+</script>
+
+</body>
+</html>
