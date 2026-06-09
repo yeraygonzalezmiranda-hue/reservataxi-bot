@@ -3,6 +3,54 @@ const TelegramBot = require('node-telegram-bot-api');
 const mongoose = require('mongoose');
 const path = require('path');
 const https = require('https');
+const nodemailer = require('nodemailer');
+
+const mailer = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.hostinger.com',
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  secure: false,
+  auth: {
+    user: process.env.SMTP_USER || 'reservas@taxilaspalmasdegrancanaria.com',
+    pass: process.env.SMTP_PASS
+  }
+});
+
+async function enviarEmailConfirmacion(datos) {
+  if (!datos.correo || !datos.fuente === 'web') return;
+  try {
+    await mailer.sendMail({
+      from: '"Reserva Taxi Las Palmas" <reservas@taxilaspalmasdegrancanaria.com>',
+      to: datos.correo,
+      subject: '✅ Tu reserva de taxi ha sido confirmada',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0a0a0a; color: #f0f0f0; padding: 24px; border-radius: 12px;">
+          <div style="text-align: center; border-bottom: 2px solid #f5c400; padding-bottom: 16px; margin-bottom: 24px;">
+            <h1 style="color: #f5c400; font-size: 20px; margin: 0;">🚖 RESERVA TAXI LAS PALMAS</h1>
+            <p style="color: #aaa; margin: 4px 0 0;">Gran Canaria</p>
+          </div>
+          <h2 style="color: #7dd87d; font-size: 18px;">✅ ¡Tu reserva ha sido confirmada!</h2>
+          <p style="color: #ccc; margin: 12px 0;">Hola <strong>${datos.nombre}</strong>, un conductor ha aceptado tu servicio.</p>
+          <div style="background: #1c1c1c; border-radius: 10px; padding: 16px; margin: 20px 0;">
+            <p style="margin: 6px 0; color: #f0f0f0;">📅 <strong>Fecha:</strong> ${datos.fecha} a las ${datos.hora}</p>
+            <p style="margin: 6px 0; color: #f0f0f0;">📍 <strong>Origen:</strong> ${datos.origen}</p>
+            <p style="margin: 6px 0; color: #f0f0f0;">🏁 <strong>Destino:</strong> ${datos.destino}</p>
+            <p style="margin: 6px 0; color: #f0f0f0;">👥 <strong>Pasajeros:</strong> ${datos.pasajeros}</p>
+            ${datos.precioEstimado ? `<p style="margin: 6px 0; color: #f5c400;">💰 <strong>Precio estimado:</strong> ${datos.precioEstimado} €</p>` : ''}
+          </div>
+          <p style="color: #aaa; font-size: 14px;">🚖 Un conductor estará en el punto de recogida a la hora indicada.</p>
+          <p style="color: #aaa; font-size: 14px;">Para cancelar o cualquier consulta contacta con nosotros:</p>
+          <p style="color: #f5c400; font-size: 14px;">📞 652 875 437 | ✉️ reservas@taxilaspalmasdegrancanaria.com</p>
+          <div style="text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid #333;">
+            <p style="color: #555; font-size: 12px;">Reserva Taxi Las Palmas de Gran Canaria</p>
+          </div>
+        </div>
+      `
+    });
+    console.log('Email de confirmación enviado a:', datos.correo);
+  } catch (err) {
+    console.error('Error enviando email:', err.message);
+  }
+}
 
 const TOKEN = process.env.BOT_TOKEN || '8707482336:AAETg0jJ6F5VgLcHCDYqeEHxemnZeALcMPI';
 const PORT = process.env.PORT || 3000;
@@ -460,6 +508,11 @@ bot.on('callback_query', async (query) => {
             { parse_mode: 'Markdown' }
           );
         } catch (e) {}
+      }
+
+      // Enviar email de confirmación si la reserva viene de la web (WhatsApp/web)
+      if (reserva.datos.fuente === 'web' || !reserva.clienteChatId) {
+        await enviarEmailConfirmacion(reserva.datos);
       }
       bot.answerCallbackQuery(query.id, { text: '✅ ¡Reserva aceptada!' });
     } catch (err) {
