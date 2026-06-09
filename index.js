@@ -9,6 +9,7 @@ const PORT = process.env.PORT || 3000;
 const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID || '898842399';
 const MONGODB_URI = process.env.MONGODB_URI;
 const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_KEY;
+const COMISION_PORCENTAJE = 10;
 
 // =================== SCHEMAS ===================
 
@@ -36,14 +37,27 @@ const festivoSchema = new mongoose.Schema({
   fechaCreacion: { type: Date, default: Date.now }
 });
 
+const comisionSchema = new mongoose.Schema({
+  conductorChatId: String,
+  conductorNombre: String,
+  reservaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Reserva' },
+  precioCarrera: Number,
+  comision: Number,
+  mes: String, // YYYY-MM
+  pagada: { type: Boolean, default: false },
+  fechaCreacion: { type: Date, default: Date.now }
+});
+
 const Conductor = mongoose.model('Conductor', conductorSchema);
 const Reserva = mongoose.model('Reserva', reservaSchema);
 const Festivo = mongoose.model('Festivo', festivoSchema);
+const Comision = mongoose.model('Comision', comisionSchema);
 
 mongoose.connect(MONGODB_URI).then(async () => {
   console.log('MongoDB conectado');
   await cargarFestivosIniciales();
   iniciarRecordatorios();
+  iniciarResumenMensual();
 }).catch(err => console.error('Error MongoDB:', err));
 
 async function cargarFestivosIniciales() {
@@ -119,8 +133,6 @@ function calcularPrecio(distanciaKm, tipo, esAeropuerto) {
   return Math.round(precio * 100) / 100;
 }
 
-// =================== ENDPOINT TARIFAS ===================
-
 app.post('/calcular-tarifa', async (req, res) => {
   const { origen, destino, fecha, hora } = req.body;
   try {
@@ -145,6 +157,84 @@ app.post('/calcular-tarifa', async (req, res) => {
   }
 });
 
+// =================== COMISIONES ===================
+
+async function registrarComision(reserva, conductorChatId) {
+  const precio = parseFloat(reserva.datos.precioEstimado);
+  if (!precio || precio <= 0) return;
+  const conductor = await Conductor.findOne({ chatId: conductorChatId });
+  const comision = Math.round(precio * COMISION_PORCENTAJE) / 100;
+  const ahora = new Date();
+  const mes = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
+  await Comision.create({
+    conductorChatId,
+    conductorNombre: conductor ? conductor.nombre : 'Desconocido',
+    reservaId: reserva._id,
+    precioCarrera: precio,
+    comision,
+    mes
+  });
+  return comision;
+}
+
+async function obtenerDeudaConductor(conductorChatId) {
+  const comisiones = await Comision.find({ conductorChatId, pagada: false });
+  const total = comisiones.reduce((sum, c) => sum + c.comision, 0);
+  return { total: Math.round(total * 100) / 100, carreras: comisiones.length };
+}
+
+async function obtenerResumenMesConductor(conductorChatId, mes) {
+  const comisiones = await Comision.find({ conductorChatId, mes });
+  const totalCarreras = comisiones.reduce((sum, c) => sum + c.precioCarrera, 0);
+  const totalComision = comisiones.reduce((sum, c) => sum + c.comision, 0);
+  return {
+    carreras: comisiones.length,
+    totalCarreras: Math.round(totalCarreras * 100) / 100,
+    totalComision: Math.round(totalComision * 100) / 100
+  };
+}
+
+// =================== RESUMEN MENSUAL AUTOMÁTICO ===================
+
+function iniciarResumenMensual() {
+  // Comprobar cada hora si es día 1 a las 9:00
+  setInterval(async () => {
+    const ahora = new Date();
+    if (ahora.getDate() === 1 && ahora.getHours() === 9 && ahora.getMinutes() < 5) {
+      const mesAnterior = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+      const mes = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, '0')}`;
+      const nombreMes = mesAnterior.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+
+      const conductores = await Conductor.find({ activo: true });
+      let resumenAdmin = `📊 *RESUMEN DE COMISIONES — ${nombreMes.toUpperCase()}*\n\n`;
+      let totalGeneral = 0;
+
+      for (const conductor of conductores) {
+        const resumen = await obtenerResumenMesConductor(conductor.chatId, mes);
+        if (resumen.carreras === 0) continue;
+
+        totalGeneral += resumen.totalComision;
+        resumenAdmin += `👤 *${conductor.nombre}*\n   Carreras: ${resumen.carreras} | Facturado: ${resumen.totalCarreras}€ | Comisión: ${resumen.totalComision}€\n\n`;
+
+        // Enviar al conductor su resumen
+        try {
+          await bot.sendMessage(conductor.chatId,
+            `📊 *RESUMEN DE ${nombreMes.toUpperCase()}*\n\n` +
+            `Has realizado *${resumen.carreras} carrera(s)* por un total de *${resumen.totalCarreras}€*.\n\n` +
+            `💰 Tu comisión pendiente del mes: *${resumen.totalComision}€*\n\n` +
+            `Por favor realiza el ingreso antes del día 7.\n` +
+            `IBAN: ES53 0049 0359 9924 1643 2863`,
+            { parse_mode: 'Markdown' }
+          );
+        } catch (e) { console.error(`Error enviando resumen a conductor:`, e.message); }
+      }
+
+      resumenAdmin += `\n💰 *TOTAL A COBRAR: ${Math.round(totalGeneral * 100) / 100}€*`;
+      bot.sendMessage(OWNER_CHAT_ID, resumenAdmin, { parse_mode: 'Markdown' });
+    }
+  }, 5 * 60 * 1000); // cada 5 minutos
+}
+
 // =================== COMANDOS BOT ===================
 
 bot.onText(/\/start/, async (msg) => {
@@ -154,7 +244,8 @@ bot.onText(/\/start/, async (msg) => {
     bot.sendMessage(chatId,
       '🚖 *Panel de Administración*\n\n' +
       '📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n👥 /conductores\n📊 /resumen\n\n' +
-      '📅 *Festivos:*\n/festivos — Ver lista\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
+      '💰 *Comisiones:*\n/deudas — Ver deudas de todos\n/pagado [nombre] — Marcar como pagado\n\n' +
+      '📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
       { parse_mode: 'Markdown' }
     );
     return;
@@ -163,12 +254,71 @@ bot.onText(/\/start/, async (msg) => {
     const existente = await Conductor.findOne({ chatId });
     if (!existente) {
       await Conductor.create({ chatId, nombre });
-      bot.sendMessage(chatId, `✅ *¡Registrado correctamente!*\n\nHola ${nombre}, ya recibirás las reservas disponibles en este chat.`, { parse_mode: 'Markdown' });
+      bot.sendMessage(chatId,
+        `✅ *¡Registrado correctamente!*\n\nHola ${nombre}, ya recibirás las reservas disponibles en este chat.\n\n` +
+        `💡 Escribe /mideuda para ver tu comisión pendiente.`,
+        { parse_mode: 'Markdown' }
+      );
       bot.sendMessage(OWNER_CHAT_ID, `🆕 Nuevo conductor registrado: *${nombre}* (ID: ${chatId})`, { parse_mode: 'Markdown' });
     } else {
-      bot.sendMessage(chatId, `👋 Hola ${nombre}, ya estás registrado.`);
+      bot.sendMessage(chatId, `👋 Hola ${nombre}, ya estás registrado.\n\n💡 Escribe /mideuda para ver tu comisión pendiente.`);
     }
   } catch (err) { console.error(err); }
+});
+
+// Comando para conductores: ver su deuda
+bot.onText(/\/mideuda/, async (msg) => {
+  const chatId = String(msg.chat.id);
+  if (chatId === OWNER_CHAT_ID) return;
+  const { total, carreras } = await obtenerDeudaConductor(chatId);
+  const ahora = new Date();
+  const mes = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
+  const resumenMes = await obtenerResumenMesConductor(chatId, mes);
+
+  bot.sendMessage(chatId,
+    `💰 *TU COMISIÓN PENDIENTE*\n\n` +
+    `Total acumulado sin pagar: *${total}€*\n` +
+    `Carreras pendientes: ${carreras}\n\n` +
+    `📅 *Este mes (${mes}):*\n` +
+    `Carreras: ${resumenMes.carreras} | Facturado: ${resumenMes.totalCarreras}€ | Comisión: ${resumenMes.totalComision}€\n\n` +
+    `El pago se realiza el día 1 de cada mes.\nIBAN: ES53 0049 0359 9924 1643 2863`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
+// Comando admin: ver deudas de todos
+bot.onText(/\/deudas/, async (msg) => {
+  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
+  const conductores = await Conductor.find({ activo: true });
+  if (!conductores.length) return bot.sendMessage(OWNER_CHAT_ID, '👥 No hay conductores registrados.');
+
+  let texto = `💰 *DEUDAS DE COMISIONES*\n\n`;
+  let totalGeneral = 0;
+
+  for (const conductor of conductores) {
+    const { total, carreras } = await obtenerDeudaConductor(conductor.chatId);
+    if (total > 0) {
+      texto += `👤 *${conductor.nombre}*: ${total}€ (${carreras} carrera(s))\n`;
+      totalGeneral += total;
+    }
+  }
+
+  texto += `\n💰 *TOTAL PENDIENTE: ${Math.round(totalGeneral * 100) / 100}€*`;
+  bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
+});
+
+// Comando admin: marcar comisiones como pagadas
+bot.onText(/\/pagado (.+)/, async (msg, match) => {
+  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
+  const nombre = match[1].trim();
+  const conductor = await Conductor.findOne({ nombre: new RegExp(nombre, 'i') });
+  if (!conductor) return bot.sendMessage(OWNER_CHAT_ID, `❌ No se encontró conductor con nombre "${nombre}"`);
+
+  const result = await Comision.updateMany({ conductorChatId: conductor.chatId, pagada: false }, { pagada: true });
+  bot.sendMessage(OWNER_CHAT_ID, `✅ Marcadas ${result.modifiedCount} comisiones como pagadas para *${conductor.nombre}*`, { parse_mode: 'Markdown' });
+  try {
+    bot.sendMessage(conductor.chatId, `✅ *Tu deuda ha sido liquidada.*\n\nGracias por el pago. Tu contador queda a cero. 🙏`, { parse_mode: 'Markdown' });
+  } catch (e) {}
 });
 
 bot.onText(/\/festivos/, async (msg) => {
@@ -185,29 +335,20 @@ bot.onText(/\/addfestivo (.+)/, async (msg, match) => {
   const partes = match[1].trim().split(' ');
   const fecha = partes[0];
   const descripcion = partes.slice(1).join(' ') || 'Festivo';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-    return bot.sendMessage(OWNER_CHAT_ID, '❌ Formato incorrecto. Usa: /addfestivo 2026-12-25 Navidad');
-  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return bot.sendMessage(OWNER_CHAT_ID, '❌ Formato: /addfestivo 2026-12-25 Navidad');
   try {
     await Festivo.create({ fecha, descripcion });
     bot.sendMessage(OWNER_CHAT_ID, `✅ Festivo añadido: *${fecha}* — ${descripcion}`, { parse_mode: 'Markdown' });
-  } catch (e) {
-    bot.sendMessage(OWNER_CHAT_ID, `⚠️ Esa fecha ya existe en la lista.`);
-  }
+  } catch (e) { bot.sendMessage(OWNER_CHAT_ID, `⚠️ Esa fecha ya existe.`); }
 });
 
 bot.onText(/\/delfestivo (.+)/, async (msg, match) => {
   if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
   const fecha = match[1].trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-    return bot.sendMessage(OWNER_CHAT_ID, '❌ Formato incorrecto. Usa: /delfestivo 2026-12-25');
-  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return bot.sendMessage(OWNER_CHAT_ID, '❌ Formato: /delfestivo 2026-12-25');
   const resultado = await Festivo.deleteOne({ fecha });
-  if (resultado.deletedCount > 0) {
-    bot.sendMessage(OWNER_CHAT_ID, `✅ Festivo eliminado: *${fecha}*`, { parse_mode: 'Markdown' });
-  } else {
-    bot.sendMessage(OWNER_CHAT_ID, `❌ No se encontró el festivo ${fecha}`);
-  }
+  if (resultado.deletedCount > 0) bot.sendMessage(OWNER_CHAT_ID, `✅ Festivo eliminado: *${fecha}*`, { parse_mode: 'Markdown' });
+  else bot.sendMessage(OWNER_CHAT_ID, `❌ No se encontró el festivo ${fecha}`);
 });
 
 bot.onText(/\/pendientes/, async (msg) => {
@@ -292,10 +433,15 @@ bot.on('callback_query', async (query) => {
       reserva.estado = 'asignada';
       reserva.conductorAsignado = chatId;
       await reserva.save();
+
       const conductor = await Conductor.findOne({ chatId });
       const nombreConductor = conductor ? conductor.nombre : 'Un conductor';
 
-      bot.editMessageText(`✅ *Reserva aceptada*\n\nHas aceptado este servicio.`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+      // Registrar comisión
+      const comision = await registrarComision(reserva, chatId);
+      const comisionTxt = comision ? `\n💰 Comisión registrada: ${comision}€` : '';
+
+      bot.editMessageText(`✅ *Reserva aceptada*\n\nHas aceptado este servicio.${comisionTxt}`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
       bot.sendMessage(chatId, `📋 *Detalles del servicio:*\n\n${formatearReserva(reserva.datos, false)}`, { parse_mode: 'Markdown' });
       bot.sendMessage(OWNER_CHAT_ID, `✅ *Reserva asignada*\n\nConductor: ${nombreConductor}\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
 
