@@ -1,4 +1,18 @@
+const express = require('express');
+const TelegramBot = require('node-telegram-bot-api');
+const mongoose = require('mongoose');
+const path = require('path');
+const https = require('https');
 const nodemailer = require('nodemailer');
+
+const TOKEN = process.env.BOT_TOKEN || '8707482336:AAETg0jJ6F5VgLcHCDYqeEHxemnZeALcMPI';
+const PORT = process.env.PORT || 3000;
+const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID || '898842399';
+const MONGODB_URI = process.env.MONGODB_URI;
+const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_KEY;
+const COMISION_PORCENTAJE = 10;
+
+// =================== EMAIL ===================
 
 const mailer = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp-relay.brevo.com',
@@ -40,18 +54,6 @@ async function enviarEmailConfirmacion(datos) {
   }
 }
 
-const express = require('express');
-const TelegramBot = require('node-telegram-bot-api');
-const mongoose = require('mongoose');
-const path = require('path');
-const https = require('https');
-
-const TOKEN = process.env.BOT_TOKEN || '8707482336:AAETg0jJ6F5VgLcHCDYqeEHxemnZeALcMPI';
-const PORT = process.env.PORT || 3000;
-const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID || '898842399';
-const MONGODB_URI = process.env.MONGODB_URI;
-const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_KEY;
-
 // =================== SCHEMAS ===================
 
 const conductorSchema = new mongoose.Schema({
@@ -78,14 +80,27 @@ const festivoSchema = new mongoose.Schema({
   fechaCreacion: { type: Date, default: Date.now }
 });
 
+const comisionSchema = new mongoose.Schema({
+  conductorChatId: String,
+  conductorNombre: String,
+  reservaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Reserva' },
+  precioCarrera: Number,
+  comision: Number,
+  mes: String,
+  pagada: { type: Boolean, default: false },
+  fechaCreacion: { type: Date, default: Date.now }
+});
+
 const Conductor = mongoose.model('Conductor', conductorSchema);
 const Reserva = mongoose.model('Reserva', reservaSchema);
 const Festivo = mongoose.model('Festivo', festivoSchema);
+const Comision = mongoose.model('Comision', comisionSchema);
 
 mongoose.connect(MONGODB_URI).then(async () => {
   console.log('MongoDB conectado');
   await cargarFestivosIniciales();
   iniciarRecordatorios();
+  iniciarResumenMensual();
 }).catch(err => console.error('Error MongoDB:', err));
 
 async function cargarFestivosIniciales() {
@@ -161,8 +176,6 @@ function calcularPrecio(distanciaKm, tipo, esAeropuerto) {
   return Math.round(precio * 100) / 100;
 }
 
-// =================== ENDPOINT TARIFAS ===================
-
 app.post('/calcular-tarifa', async (req, res) => {
   const { origen, destino, fecha, hora } = req.body;
   try {
@@ -187,6 +200,71 @@ app.post('/calcular-tarifa', async (req, res) => {
   }
 });
 
+// =================== COMISIONES ===================
+
+async function registrarComision(reserva, conductorChatId) {
+  const precio = parseFloat(reserva.datos.precioEstimado);
+  if (!precio || precio <= 0) return;
+  const conductor = await Conductor.findOne({ chatId: conductorChatId });
+  const comision = Math.round(precio * COMISION_PORCENTAJE) / 100;
+  const ahora = new Date();
+  const mes = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
+  await Comision.create({
+    conductorChatId,
+    conductorNombre: conductor ? conductor.nombre : 'Desconocido',
+    reservaId: reserva._id,
+    precioCarrera: precio,
+    comision,
+    mes
+  });
+  return comision;
+}
+
+async function obtenerDeudaConductor(conductorChatId) {
+  const comisiones = await Comision.find({ conductorChatId, pagada: false });
+  const total = comisiones.reduce((sum, c) => sum + c.comision, 0);
+  return { total: Math.round(total * 100) / 100, carreras: comisiones.length };
+}
+
+async function obtenerResumenMesConductor(conductorChatId, mes) {
+  const comisiones = await Comision.find({ conductorChatId, mes });
+  const totalCarreras = comisiones.reduce((sum, c) => sum + c.precioCarrera, 0);
+  const totalComision = comisiones.reduce((sum, c) => sum + c.comision, 0);
+  return {
+    carreras: comisiones.length,
+    totalCarreras: Math.round(totalCarreras * 100) / 100,
+    totalComision: Math.round(totalComision * 100) / 100
+  };
+}
+
+function iniciarResumenMensual() {
+  setInterval(async () => {
+    const ahora = new Date();
+    if (ahora.getDate() === 1 && ahora.getHours() === 9 && ahora.getMinutes() < 5) {
+      const mesAnterior = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+      const mes = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, '0')}`;
+      const nombreMes = mesAnterior.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+      const conductores = await Conductor.find({ activo: true });
+      let resumenAdmin = `📊 *RESUMEN DE COMISIONES — ${nombreMes.toUpperCase()}*\n\n`;
+      let totalGeneral = 0;
+      for (const conductor of conductores) {
+        const resumen = await obtenerResumenMesConductor(conductor.chatId, mes);
+        if (resumen.carreras === 0) continue;
+        totalGeneral += resumen.totalComision;
+        resumenAdmin += `👤 *${conductor.nombre}*\n   Carreras: ${resumen.carreras} | Facturado: ${resumen.totalCarreras}€ | Comisión: ${resumen.totalComision}€\n\n`;
+        try {
+          await bot.sendMessage(conductor.chatId,
+            `📊 *RESUMEN DE ${nombreMes.toUpperCase()}*\n\nHas realizado *${resumen.carreras} carrera(s)* por un total de *${resumen.totalCarreras}€*.\n\n💰 Tu comisión pendiente del mes: *${resumen.totalComision}€*\n\nPor favor realiza el ingreso antes del día 7.\nIBAN: ES53 0049 0359 9924 1643 2863`,
+            { parse_mode: 'Markdown' }
+          );
+        } catch (e) {}
+      }
+      resumenAdmin += `\n💰 *TOTAL A COBRAR: ${Math.round(totalGeneral * 100) / 100}€*`;
+      bot.sendMessage(OWNER_CHAT_ID, resumenAdmin, { parse_mode: 'Markdown' });
+    }
+  }, 5 * 60 * 1000);
+}
+
 // =================== COMANDOS BOT ===================
 
 bot.onText(/\/start/, async (msg) => {
@@ -194,9 +272,7 @@ bot.onText(/\/start/, async (msg) => {
   const nombre = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
   if (chatId === OWNER_CHAT_ID) {
     bot.sendMessage(chatId,
-      '🚖 *Panel de Administración*\n\n' +
-      '📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n👥 /conductores\n📊 /resumen\n\n' +
-      '📅 *Festivos:*\n/festivos — Ver lista\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
+      '🚖 *Panel de Administración*\n\n📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n👥 /conductores\n📊 /resumen\n\n💰 *Comisiones:*\n/deudas\n/pagado NombreConductor\n\n📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
       { parse_mode: 'Markdown' }
     );
     return;
@@ -205,19 +281,56 @@ bot.onText(/\/start/, async (msg) => {
     const existente = await Conductor.findOne({ chatId });
     if (!existente) {
       await Conductor.create({ chatId, nombre });
-      bot.sendMessage(chatId, `✅ *¡Registrado correctamente!*\n\nHola ${nombre}, ya recibirás las reservas disponibles en este chat.`, { parse_mode: 'Markdown' });
-      bot.sendMessage(OWNER_CHAT_ID, `🆕 Nuevo conductor registrado: *${nombre}* (ID: ${chatId})`, { parse_mode: 'Markdown' });
+      bot.sendMessage(chatId, `✅ *¡Registrado correctamente!*\n\nHola ${nombre}, ya recibirás las reservas disponibles.\n\n💡 Escribe /mideuda para ver tu comisión pendiente.`, { parse_mode: 'Markdown' });
+      bot.sendMessage(OWNER_CHAT_ID, `🆕 Nuevo conductor: *${nombre}* (ID: ${chatId})`, { parse_mode: 'Markdown' });
     } else {
-      bot.sendMessage(chatId, `👋 Hola ${nombre}, ya estás registrado.`);
+      bot.sendMessage(chatId, `👋 Hola ${nombre}, ya estás registrado.\n\n💡 /mideuda para ver tu comisión.`);
     }
   } catch (err) { console.error(err); }
+});
+
+bot.onText(/\/mideuda/, async (msg) => {
+  const chatId = String(msg.chat.id);
+  if (chatId === OWNER_CHAT_ID) return;
+  const { total, carreras } = await obtenerDeudaConductor(chatId);
+  const ahora = new Date();
+  const mes = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
+  const resumenMes = await obtenerResumenMesConductor(chatId, mes);
+  bot.sendMessage(chatId,
+    `💰 *TU COMISIÓN PENDIENTE*\n\nTotal sin pagar: *${total}€*\nCarreras pendientes: ${carreras}\n\n📅 *Este mes (${mes}):*\nCarreras: ${resumenMes.carreras} | Facturado: ${resumenMes.totalCarreras}€ | Comisión: ${resumenMes.totalComision}€\n\nIBAN: ES53 0049 0359 9924 1643 2863`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
+bot.onText(/\/deudas/, async (msg) => {
+  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
+  const conductores = await Conductor.find({ activo: true });
+  if (!conductores.length) return bot.sendMessage(OWNER_CHAT_ID, '👥 No hay conductores.');
+  let texto = `💰 *DEUDAS DE COMISIONES*\n\n`;
+  let totalGeneral = 0;
+  for (const conductor of conductores) {
+    const { total, carreras } = await obtenerDeudaConductor(conductor.chatId);
+    if (total > 0) { texto += `👤 *${conductor.nombre}*: ${total}€ (${carreras} carreras)\n`; totalGeneral += total; }
+  }
+  texto += `\n💰 *TOTAL: ${Math.round(totalGeneral * 100) / 100}€*`;
+  bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/pagado (.+)/, async (msg, match) => {
+  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
+  const nombre = match[1].trim();
+  const conductor = await Conductor.findOne({ nombre: new RegExp(nombre, 'i') });
+  if (!conductor) return bot.sendMessage(OWNER_CHAT_ID, `❌ No encontrado: "${nombre}"`);
+  const result = await Comision.updateMany({ conductorChatId: conductor.chatId, pagada: false }, { pagada: true });
+  bot.sendMessage(OWNER_CHAT_ID, `✅ ${result.modifiedCount} comisiones pagadas para *${conductor.nombre}*`, { parse_mode: 'Markdown' });
+  try { bot.sendMessage(conductor.chatId, `✅ *Tu deuda ha sido liquidada.* Gracias por el pago. 🙏`, { parse_mode: 'Markdown' }); } catch (e) {}
 });
 
 bot.onText(/\/festivos/, async (msg) => {
   if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
   const festivos = await Festivo.find().sort({ fecha: 1 });
-  if (!festivos.length) return bot.sendMessage(OWNER_CHAT_ID, '📅 No hay festivos configurados.');
-  let texto = `📅 *FESTIVOS CONFIGURADOS (${festivos.length})*\n\n`;
+  if (!festivos.length) return bot.sendMessage(OWNER_CHAT_ID, '📅 No hay festivos.');
+  let texto = `📅 *FESTIVOS (${festivos.length})*\n\n`;
   festivos.forEach(f => { texto += `• ${f.fecha} — ${f.descripcion}\n`; });
   bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
 });
@@ -227,36 +340,27 @@ bot.onText(/\/addfestivo (.+)/, async (msg, match) => {
   const partes = match[1].trim().split(' ');
   const fecha = partes[0];
   const descripcion = partes.slice(1).join(' ') || 'Festivo';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-    return bot.sendMessage(OWNER_CHAT_ID, '❌ Formato incorrecto. Usa: /addfestivo 2026-12-25 Navidad');
-  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return bot.sendMessage(OWNER_CHAT_ID, '❌ Formato: /addfestivo 2026-12-25 Navidad');
   try {
     await Festivo.create({ fecha, descripcion });
     bot.sendMessage(OWNER_CHAT_ID, `✅ Festivo añadido: *${fecha}* — ${descripcion}`, { parse_mode: 'Markdown' });
-  } catch (e) {
-    bot.sendMessage(OWNER_CHAT_ID, `⚠️ Esa fecha ya existe en la lista.`);
-  }
+  } catch (e) { bot.sendMessage(OWNER_CHAT_ID, `⚠️ Esa fecha ya existe.`); }
 });
 
 bot.onText(/\/delfestivo (.+)/, async (msg, match) => {
   if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
   const fecha = match[1].trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-    return bot.sendMessage(OWNER_CHAT_ID, '❌ Formato incorrecto. Usa: /delfestivo 2026-12-25');
-  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return bot.sendMessage(OWNER_CHAT_ID, '❌ Formato: /delfestivo 2026-12-25');
   const resultado = await Festivo.deleteOne({ fecha });
-  if (resultado.deletedCount > 0) {
-    bot.sendMessage(OWNER_CHAT_ID, `✅ Festivo eliminado: *${fecha}*`, { parse_mode: 'Markdown' });
-  } else {
-    bot.sendMessage(OWNER_CHAT_ID, `❌ No se encontró el festivo ${fecha}`);
-  }
+  if (resultado.deletedCount > 0) bot.sendMessage(OWNER_CHAT_ID, `✅ Festivo eliminado: *${fecha}*`, { parse_mode: 'Markdown' });
+  else bot.sendMessage(OWNER_CHAT_ID, `❌ No encontrado: ${fecha}`);
 });
 
 bot.onText(/\/pendientes/, async (msg) => {
   if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
   const reservas = await Reserva.find({ estado: 'pendiente' }).sort({ fechaCreacion: -1 }).limit(10);
   if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '📋 No hay reservas pendientes.');
-  let texto = `📋 *RESERVAS PENDIENTES (${reservas.length})*\n\n`;
+  let texto = `📋 *PENDIENTES (${reservas.length})*\n\n`;
   reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n\n`; });
   bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
 });
@@ -264,8 +368,8 @@ bot.onText(/\/pendientes/, async (msg) => {
 bot.onText(/\/asignadas/, async (msg) => {
   if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
   const reservas = await Reserva.find({ estado: 'asignada' }).sort({ fechaCreacion: -1 }).limit(10);
-  if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '✅ No hay reservas asignadas.');
-  let texto = `✅ *RESERVAS ASIGNADAS (${reservas.length})*\n\n`;
+  if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '✅ No hay asignadas.');
+  let texto = `✅ *ASIGNADAS (${reservas.length})*\n\n`;
   reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n\n`; });
   bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
 });
@@ -273,8 +377,8 @@ bot.onText(/\/asignadas/, async (msg) => {
 bot.onText(/\/canceladas/, async (msg) => {
   if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
   const reservas = await Reserva.find({ estado: 'cancelada' }).sort({ fechaCreacion: -1 }).limit(10);
-  if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '❌ No hay reservas canceladas.');
-  let texto = `❌ *RESERVAS CANCELADAS (${reservas.length})*\n\n`;
+  if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '❌ No hay canceladas.');
+  let texto = `❌ *CANCELADAS (${reservas.length})*\n\n`;
   reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n\n`; });
   bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
 });
@@ -282,7 +386,7 @@ bot.onText(/\/canceladas/, async (msg) => {
 bot.onText(/\/conductores/, async (msg) => {
   if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
   const conductores = await Conductor.find().sort({ fechaRegistro: -1 });
-  if (!conductores.length) return bot.sendMessage(OWNER_CHAT_ID, '👥 No hay conductores registrados.');
+  if (!conductores.length) return bot.sendMessage(OWNER_CHAT_ID, '👥 No hay conductores.');
   let texto = `👥 *CONDUCTORES (${conductores.length})*\n\n`;
   conductores.forEach((c, i) => { texto += `*${i+1}.* ${c.nombre} — ${c.activo ? '🟢 Activo' : '🔴 Inactivo'}\n`; });
   bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
@@ -298,7 +402,7 @@ bot.onText(/\/resumen/, async (msg) => {
     Reserva.countDocuments({ estado: 'cancelada', fechaCreacion: { $gte: hoy, $lt: manana } }),
     Conductor.countDocuments({ activo: true })
   ]);
-  bot.sendMessage(OWNER_CHAT_ID, `📊 *RESUMEN DE HOY*\n\n📋 Pendientes: ${pendientes}\n✅ Asignadas: ${asignadas}\n❌ Canceladas: ${canceladas}\n👥 Conductores activos: ${conductores}`, { parse_mode: 'Markdown' });
+  bot.sendMessage(OWNER_CHAT_ID, `📊 *RESUMEN HOY*\n\n📋 Pendientes: ${pendientes}\n✅ Asignadas: ${asignadas}\n❌ Canceladas: ${canceladas}\n👥 Conductores: ${conductores}`, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/cancelar/, async (msg) => {
@@ -336,8 +440,10 @@ bot.on('callback_query', async (query) => {
       await reserva.save();
       const conductor = await Conductor.findOne({ chatId });
       const nombreConductor = conductor ? conductor.nombre : 'Un conductor';
+      const comision = await registrarComision(reserva, chatId);
+      const comisionTxt = comision ? `\n💰 Comisión registrada: ${comision}€` : '';
 
-      bot.editMessageText(`✅ *Reserva aceptada*\n\nHas aceptado este servicio.`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+      bot.editMessageText(`✅ *Reserva aceptada*\n\nHas aceptado este servicio.${comisionTxt}`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
       bot.sendMessage(chatId, `📋 *Detalles del servicio:*\n\n${formatearReserva(reserva.datos, false)}`, { parse_mode: 'Markdown' });
       bot.sendMessage(OWNER_CHAT_ID, `✅ *Reserva asignada*\n\nConductor: ${nombreConductor}\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
 
@@ -357,6 +463,11 @@ bot.on('callback_query', async (query) => {
           );
         } catch (e) {}
       }
+
+      if (!reserva.clienteChatId || reserva.datos.fuente === 'web') {
+        await enviarEmailConfirmacion(reserva.datos);
+      }
+
       bot.answerCallbackQuery(query.id, { text: '✅ ¡Reserva aceptada!' });
     } catch (err) {
       console.error(err);
@@ -377,9 +488,9 @@ bot.on('callback_query', async (query) => {
       reserva.estado = 'cancelada';
       await reserva.save();
       bot.editMessageText(`❌ *Reserva cancelada correctamente.*`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-      bot.sendMessage(OWNER_CHAT_ID, `❌ *Reserva cancelada por el cliente*\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
+      bot.sendMessage(OWNER_CHAT_ID, `❌ *Cancelada por cliente*\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
       if (reserva.conductorAsignado) {
-        try { bot.sendMessage(reserva.conductorAsignado, `❌ *Servicio cancelado*\n\nEl cliente canceló:\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}`, { parse_mode: 'Markdown' }); } catch (e) {}
+        try { bot.sendMessage(reserva.conductorAsignado, `❌ *Servicio cancelado*\n\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}`, { parse_mode: 'Markdown' }); } catch (e) {}
       }
       bot.answerCallbackQuery(query.id, { text: '❌ Reserva cancelada' });
     } catch (err) { console.error(err); }
