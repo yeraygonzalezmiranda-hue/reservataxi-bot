@@ -65,7 +65,7 @@ function enviarEmailBrevo(payload) {
   });
 }
 
-async function enviarEmailConfirmacion(datos) {
+async function enviarEmailConfirmacion(datos, reservaId) {
   if (!datos.correo) {
     console.log('Reserva sin correo, no se envía email:', datos.nombre);
     try { bot.sendMessage(OWNER_CHAT_ID, `⚠️ La reserva de *${datos.nombre}* no tiene correo, no se envió email de confirmación.`, { parse_mode: 'Markdown' }); } catch (e) {}
@@ -78,6 +78,13 @@ async function enviarEmailConfirmacion(datos) {
   }
   try {
     const precioHtml = datos.precioEstimado ? `<p><strong>Precio estimado:</strong> ${datos.precioEstimado} €</p>` : '';
+    const base = process.env.BASE_URL || '';
+    const cancelarHtml = (reservaId && base) ? `
+        <div style="background:#fff;border:1px solid #f0d0d0;border-radius:8px;padding:16px;margin:16px 0;text-align:center;">
+          <p style="margin:0 0 12px;color:#666;font-size:14px;">¿Necesitas cancelar tu reserva?</p>
+          <a href="${base}/cancelar?id=${reservaId}" style="display:inline-block;padding:12px 24px;background:#e05050;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">Cancelar mi reserva</a>
+          <p style="margin:12px 0 0;color:#999;font-size:12px;">Solo se puede cancelar online hasta 2 horas antes del servicio.</p>
+        </div>` : '';
     await enviarEmailBrevo({
       sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
       to: [{ email: datos.correo, name: datos.nombre }],
@@ -93,6 +100,7 @@ async function enviarEmailConfirmacion(datos) {
           <p>👥 <strong>Pasajeros:</strong> ${datos.pasajeros}</p>
           ${precioHtml}
         </div>
+        ${cancelarHtml}
         <p>🚖 Un conductor estará en el punto de recogida a la hora indicada.</p>
         <p>📞 Para cancelar o consultas: <strong>828 810 938</strong></p>
         <p>✉️ reservas@taxilaspalmasdegrancanaria.com</p>
@@ -204,18 +212,23 @@ async function determinarTarifa(fecha, hora) {
 
 async function calcularDistanciaKm(origen, destino) {
   return new Promise((resolve, reject) => {
-    const origenEnc = encodeURIComponent(origen + ', Las Palmas de Gran Canaria');
-    const destinoEnc = encodeURIComponent(destino + ', Las Palmas de Gran Canaria');
-    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origenEnc}&destinations=${destinoEnc}&key=${GOOGLE_MAPS_KEY}&language=es`;
+    const origenEnc = encodeURIComponent(origen + ', Las Palmas de Gran Canaria, España');
+    const destinoEnc = encodeURIComponent(destino + ', Las Palmas de Gran Canaria, España');
+    // Directions API: calcula la ruta igual que la app de Google Maps.
+    // departure_time=now + traffic_model=best_guess => ruta recomendada con tráfico real.
+    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origenEnc}&destination=${destinoEnc}&key=${GOOGLE_MAPS_KEY}&language=es&region=es&departure_time=now&traffic_model=best_guess&alternatives=false`;
     https.get(url, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
-          const elemento = json.rows[0].elements[0];
-          if (elemento.status === 'OK') {
-            resolve(Math.round(elemento.distance.value / 100) / 10);
+          if (json.status === 'OK' && json.routes && json.routes.length > 0) {
+            // Sumar la distancia de todos los tramos (legs) de la ruta recomendada
+            const ruta = json.routes[0];
+            let metros = 0;
+            for (const leg of ruta.legs) metros += leg.distance.value;
+            resolve(Math.round(metros / 100) / 10);
           } else {
             reject(new Error('Ruta no encontrada'));
           }
@@ -559,7 +572,7 @@ bot.on('callback_query', async (query) => {
 
       // Enviar email de confirmación SIEMPRE (web, WhatsApp, Telegram, Facebook...)
       // Solo se omite si la reserva no tiene correo.
-      await enviarEmailConfirmacion(reserva.datos);
+      await enviarEmailConfirmacion(reserva.datos, reserva._id);
 
       bot.answerCallbackQuery(query.id, { text: '✅ ¡Reserva aceptada!' });
     } catch (err) {
@@ -677,10 +690,85 @@ app.post('/reserva', async (req, res) => {
     reserva.mensajesEnviados = mensajesEnviados;
     await reserva.save();
     await bot.sendMessage(OWNER_CHAT_ID, `📨 *Nueva reserva enviada a ${conductores.length} conductor(es)*\n\n${formatearReserva(data, true)}`, { parse_mode: 'Markdown' });
-    res.json({ ok: true });
+    res.json({ ok: true, reservaId: reserva._id });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false });
+  }
+});
+
+// =================== CANCELACIÓN WEB POR EL CLIENTE ===================
+
+const BASE_URL = process.env.BASE_URL || '';
+
+// Página que ve el cliente al pulsar el enlace de cancelación
+app.get('/cancelar', async (req, res) => {
+  const id = req.query.id;
+  const html = (titulo, mensaje, color) => `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Cancelar reserva</title>
+    <style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#0a0a0a;color:#f0f0f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px}
+    .box{max-width:440px;background:#141414;border:1px solid ${color};border-radius:16px;padding:32px;text-align:center}
+    .icon{font-size:54px;margin-bottom:16px}h1{color:${color};font-size:22px;margin:0 0 12px}p{color:#bbb;font-size:15px;line-height:1.6;margin:0 0 20px}
+    .btn{display:inline-block;padding:14px 28px;background:#e05050;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;text-decoration:none}
+    .tel{color:#f5c400;text-decoration:none;font-weight:700}</style></head><body><div class="box">${titulo}${mensaje}</div></body></html>`;
+
+  try {
+    const reserva = await Reserva.findById(id);
+    if (!reserva) {
+      return res.send(html('<div class="icon">❓</div>', '<h1>Reserva no encontrada</h1><p>El enlace no es válido. Para cualquier consulta llama al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>', '#888'));
+    }
+    if (reserva.estado === 'cancelada') {
+      return res.send(html('<div class="icon">✅</div>', '<h1>Ya estaba cancelada</h1><p>Esta reserva ya figura como cancelada. No tienes que hacer nada más.</p>', '#7dd87d'));
+    }
+    // No permitir cancelar con menos de 2 horas de antelación
+    if (reserva.fechaServicio) {
+      const minutos = (new Date(reserva.fechaServicio) - ahoraCanarias()) / 60000;
+      if (minutos < MINIMO_HORAS_ANTELACION * 60) {
+        return res.send(html('<div class="icon">⏱️</div>', `<h1>No se puede cancelar online</h1><p>Tu servicio es en menos de 2 horas. Para cancelarlo, llama directamente al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>`, '#f5c400'));
+      }
+    }
+    const d = reserva.datos;
+    // Mostrar pantalla de confirmación con un botón que llama a /cancelar-confirmar
+    return res.send(html('<div class="icon">⚠️</div>', `<h1>¿Cancelar tu reserva?</h1>
+      <p>📅 ${d.fecha} a las ${d.hora}<br>📍 ${d.origen} → ${d.destino}</p>
+      <a class="btn" href="/cancelar-confirmar?id=${id}">Sí, cancelar reserva</a>`, '#f5c400'));
+  } catch (e) {
+    return res.send(html('<div class="icon">❓</div>', '<h1>Enlace no válido</h1><p>Para cualquier consulta llama al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>', '#888'));
+  }
+});
+
+// Confirmación real de la cancelación (cuando el cliente pulsa el botón)
+app.get('/cancelar-confirmar', async (req, res) => {
+  const id = req.query.id;
+  const html = (titulo, mensaje, color) => `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Cancelar reserva</title>
+    <style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#0a0a0a;color:#f0f0f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px}
+    .box{max-width:440px;background:#141414;border:1px solid ${color};border-radius:16px;padding:32px;text-align:center}
+    .icon{font-size:54px;margin-bottom:16px}h1{color:${color};font-size:22px;margin:0 0 12px}p{color:#bbb;font-size:15px;line-height:1.6;margin:0}
+    .tel{color:#f5c400;text-decoration:none;font-weight:700}</style></head><body><div class="box">${titulo}${mensaje}</div></body></html>`;
+
+  try {
+    const reserva = await Reserva.findById(id);
+    if (!reserva) return res.send(html('<div class="icon">❓</div>', '<h1>Reserva no encontrada</h1><p>El enlace no es válido.</p>', '#888'));
+    if (reserva.estado === 'cancelada') return res.send(html('<div class="icon">✅</div>', '<h1>Ya estaba cancelada</h1><p>No tienes que hacer nada más.</p>', '#7dd87d'));
+    if (reserva.fechaServicio) {
+      const minutos = (new Date(reserva.fechaServicio) - ahoraCanarias()) / 60000;
+      if (minutos < MINIMO_HORAS_ANTELACION * 60) {
+        return res.send(html('<div class="icon">⏱️</div>', `<h1>No se puede cancelar online</h1><p>Tu servicio es en menos de 2 horas. Llama al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>`, '#f5c400'));
+      }
+    }
+    reserva.estado = 'cancelada';
+    await reserva.save();
+    // Anular comisión del conductor
+    const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
+    // Avisar al admin
+    bot.sendMessage(OWNER_CHAT_ID, `❌ *Cancelada por el cliente (web)*\n\n${formatearReserva(reserva.datos, true)}${comisionesBorradas.deletedCount > 0 ? '\n💰 Comisión anulada al conductor.' : ''}`, { parse_mode: 'Markdown' });
+    // Avisar al conductor asignado
+    if (reserva.conductorAsignado) {
+      try { bot.sendMessage(reserva.conductorAsignado, `❌ *Servicio cancelado por el cliente*\n\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}${comisionesBorradas.deletedCount > 0 ? '\n\n💰 La comisión de este servicio ha sido anulada.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
+    }
+    return res.send(html('<div class="icon">✅</div>', '<h1>Reserva cancelada</h1><p>Tu reserva ha sido cancelada correctamente. Esperamos verte pronto.</p>', '#7dd87d'));
+  } catch (e) {
+    console.error(e);
+    return res.send(html('<div class="icon">❓</div>', '<h1>Enlace no válido</h1><p>Para cualquier consulta llama al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>', '#888'));
   }
 });
 
