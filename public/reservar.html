@@ -177,6 +177,31 @@
     .success-box h2 { color: #7dd87d; font-size: 20px; margin-bottom: 8px; }
     .success-box p { color: #aaa; font-size: 14px; line-height: 1.5; }
 
+    .rechazo-box {
+      display: none;
+      background: #3a2a1e;
+      border: 1px solid #6a4d2d;
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    .rechazo-box .check { font-size: 48px; margin-bottom: 12px; }
+    .rechazo-box h2 { color: #f5c400; font-size: 20px; margin-bottom: 8px; }
+    .rechazo-box p { color: #ccc; font-size: 14px; line-height: 1.5; margin-bottom: 16px; }
+
+    .btn-volver {
+      padding: 12px 24px;
+      background: #f5c400;
+      color: #0a0a0a;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
     .info-bar {
       background: #111;
       border: 1px solid #222;
@@ -302,7 +327,14 @@
   <div class="success-box" id="success-box">
     <div class="check">✅</div>
     <h2>¡Reserva enviada!</h2>
-    <p>Hemos recibido tu solicitud.<br>Te confirmaremos la reserva en breve.<br><br>Para cualquier consulta:<br><a href="tel:+34652875437" style="color:#f5c400">652 875 437</a></p>
+    <p>Hemos recibido tu solicitud.<br>Te confirmaremos la reserva en breve.<br><br>Para cualquier consulta:<br><a href="tel:+34828810938" style="color:#f5c400">828 810 938</a></p>
+  </div>
+
+  <div class="rechazo-box" id="rechazo-box">
+    <div class="check">⏱️</div>
+    <h2>No se puede reservar a esa hora</h2>
+    <p id="rechazo-texto"></p>
+    <button class="btn-volver" onclick="volverFormulario()">Volver a intentar</button>
   </div>
 
 </div>
@@ -392,6 +424,19 @@
 
   async function enviarReserva() {
     if (!validar()) return;
+
+    // Comprobación de 2 horas de antelación (hora de Canarias)
+    const fechaHora = new Date(document.getElementById('fecha').value + 'T' + document.getElementById('hora').value + ':00');
+    const ahoraCanarias = new Date(new Date().toLocaleString('en-US', { timeZone: 'Atlantic/Canary' }));
+    const minutosMargen = (fechaHora - ahoraCanarias) / 60000;
+    if (minutosMargen < 120) {
+      document.getElementById('rechazo-texto').textContent = 'No realizamos servicios inmediatos. Las reservas requieren un mínimo de 2 horas de antelación. Consultas: 828 810 938.';
+      document.getElementById('formulario').style.display = 'none';
+      document.getElementById('rechazo-box').style.display = 'block';
+      window.scrollTo(0, 0);
+      return;
+    }
+
     const btn = document.getElementById('btn-enviar');
     btn.disabled = true;
     btn.textContent = 'Enviando...';
@@ -421,20 +466,32 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(datos)
       });
-      if (res.ok) {
+      const resultado = await res.json();
+      if (resultado.ok) {
         document.getElementById('formulario').style.display = 'none';
         document.getElementById('success-box').style.display = 'block';
         window.scrollTo(0, 0);
       } else {
-        alert('Error al enviar. Inténtalo de nuevo.');
-        btn.disabled = false;
-        btn.textContent = '🚖 Confirmar reserva';
+        // El servidor rechazó la reserva (ej: menos de 2 horas de antelación)
+        document.getElementById('rechazo-texto').textContent = resultado.error || 'No se pudo procesar la reserva. Revisa los datos e inténtalo de nuevo.';
+        document.getElementById('formulario').style.display = 'none';
+        document.getElementById('rechazo-box').style.display = 'block';
+        window.scrollTo(0, 0);
       }
     } catch (e) {
       alert('Error de conexión. Inténtalo de nuevo.');
       btn.disabled = false;
       btn.textContent = '🚖 Confirmar reserva';
     }
+  }
+
+  function volverFormulario() {
+    document.getElementById('rechazo-box').style.display = 'none';
+    document.getElementById('formulario').style.display = 'block';
+    const btn = document.getElementById('btn-enviar');
+    btn.disabled = false;
+    btn.textContent = '🚖 Confirmar reserva';
+    window.scrollTo(0, 0);
   }
 </script>
 
