@@ -3,7 +3,6 @@ const TelegramBot = require('node-telegram-bot-api');
 const mongoose = require('mongoose');
 const path = require('path');
 const https = require('https');
-const nodemailer = require('nodemailer');
 
 const TOKEN = process.env.BOT_TOKEN;
 const PORT = process.env.PORT || 3000;
@@ -36,17 +35,35 @@ function cumpleAntelacion(fecha, hora) {
   }
 }
 
-// =================== EMAIL ===================
+// =================== EMAIL (API de Brevo — Railway bloquea SMTP) ===================
 
-const mailer = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp-relay.brevo.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER || 'ae2d79001@smtp-brevo.com',
-    pass: process.env.SMTP_PASS
-  }
-});
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+
+function enviarEmailBrevo(payload) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(payload);
+    const req = https.request({
+      hostname: 'api.brevo.com',
+      path: '/v3/smtp/email',
+      method: 'POST',
+      headers: {
+        'api-key': BREVO_API_KEY,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);
+        else reject(new Error(`Brevo ${res.statusCode}: ${data}`));
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
 
 async function enviarEmailConfirmacion(datos) {
   if (!datos.correo) {
@@ -54,13 +71,18 @@ async function enviarEmailConfirmacion(datos) {
     try { bot.sendMessage(OWNER_CHAT_ID, `⚠️ La reserva de *${datos.nombre}* no tiene correo, no se envió email de confirmación.`, { parse_mode: 'Markdown' }); } catch (e) {}
     return;
   }
+  if (!BREVO_API_KEY) {
+    console.error('Falta la variable BREVO_API_KEY');
+    try { bot.sendMessage(OWNER_CHAT_ID, `❌ No se pudo enviar el email: falta la variable BREVO_API_KEY en Railway.`); } catch (e) {}
+    return;
+  }
   try {
     const precioHtml = datos.precioEstimado ? `<p><strong>Precio estimado:</strong> ${datos.precioEstimado} €</p>` : '';
-    await mailer.sendMail({
-      from: '"Reserva Taxi Las Palmas" <ae2d79001@smtp-brevo.com>',
-      to: datos.correo,
+    await enviarEmailBrevo({
+      sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
+      to: [{ email: datos.correo, name: datos.nombre }],
       subject: 'Tu reserva de taxi ha sido confirmada',
-      html: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f9f9f9;max-width:600px;margin:0 auto;">
+      htmlContent: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f9f9f9;max-width:600px;margin:0 auto;">
         <h2 style="color:#f5c400;background:#1a1a1a;padding:16px;border-radius:8px;">🚖 Reserva Taxi Las Palmas</h2>
         <h3 style="color:#2d8a2d;">✅ Tu reserva ha sido confirmada</h3>
         <p>Hola <strong>${datos.nombre}</strong>, un conductor ha aceptado tu servicio.</p>
@@ -160,6 +182,11 @@ async function cargarFestivosIniciales() {
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Página para comprobar qué versión está desplegada
+app.get('/version', (req, res) => {
+  res.send(`VERSION 2 — Bloqueo de ${MINIMO_HORAS_ANTELACION}h ACTIVO ✅ | Hora Canarias: ${ahoraCanarias().toLocaleString('es-ES')}`);
+});
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
@@ -308,7 +335,7 @@ bot.onText(/\/start/, async (msg) => {
   const nombre = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
   if (chatId === OWNER_CHAT_ID) {
     bot.sendMessage(chatId,
-      '🚖 *Panel de Administración*\n\n📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n👥 /conductores\n📊 /resumen\n\n💰 *Comisiones:*\n/deudas\n/pagado NombreConductor\n\n📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
+      '🚖 *Panel de Administración*\n\n📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n🚫 /cancelarreserva ID\n👥 /conductores\n📊 /resumen\n\n💰 *Comisiones:*\n/deudas\n/pagado NombreConductor\n\n📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
       { parse_mode: 'Markdown' }
     );
     return;
@@ -397,7 +424,8 @@ bot.onText(/\/pendientes/, async (msg) => {
   const reservas = await Reserva.find({ estado: 'pendiente' }).sort({ fechaCreacion: -1 }).limit(10);
   if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '📋 No hay reservas pendientes.');
   let texto = `📋 *PENDIENTES (${reservas.length})*\n\n`;
-  reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n\n`; });
+  reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n   🆔 \`${r._id}\`\n\n`; });
+  texto += `\n💡 Para cancelar: /cancelarreserva ID`;
   bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
 });
 
@@ -406,7 +434,8 @@ bot.onText(/\/asignadas/, async (msg) => {
   const reservas = await Reserva.find({ estado: 'asignada' }).sort({ fechaCreacion: -1 }).limit(10);
   if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '✅ No hay asignadas.');
   let texto = `✅ *ASIGNADAS (${reservas.length})*\n\n`;
-  reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n\n`; });
+  reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n   🆔 \`${r._id}\`\n\n`; });
+  texto += `\n💡 Para cancelar: /cancelarreserva ID`;
   bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
 });
 
@@ -417,6 +446,34 @@ bot.onText(/\/canceladas/, async (msg) => {
   let texto = `❌ *CANCELADAS (${reservas.length})*\n\n`;
   reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n\n`; });
   bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/cancelarreserva (.+)/, async (msg, match) => {
+  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
+  const reservaId = match[1].trim();
+  try {
+    const reserva = await Reserva.findById(reservaId);
+    if (!reserva) return bot.sendMessage(OWNER_CHAT_ID, `❌ No se encontró ninguna reserva con ese ID.`);
+    if (reserva.estado === 'cancelada') return bot.sendMessage(OWNER_CHAT_ID, `⚠️ Esa reserva ya estaba cancelada.`);
+    reserva.estado = 'cancelada';
+    await reserva.save();
+    // Anular la comisión: una reserva cancelada no genera cobro al conductor
+    const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
+    let aviso = `❌ *Reserva cancelada*\n\n${formatearReserva(reserva.datos, true)}`;
+    if (comisionesBorradas.deletedCount > 0) aviso += `\n💰 Comisión anulada al conductor.`;
+    bot.sendMessage(OWNER_CHAT_ID, aviso, { parse_mode: 'Markdown' });
+    // Avisar al conductor asignado
+    if (reserva.conductorAsignado) {
+      try { bot.sendMessage(reserva.conductorAsignado, `❌ *Servicio cancelado*\n\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}${comisionesBorradas.deletedCount > 0 ? '\n\n💰 La comisión de este servicio ha sido anulada.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
+    }
+    // Avisar al cliente si reservó por Telegram
+    if (reserva.clienteChatId) {
+      try { bot.sendMessage(reserva.clienteChatId, `❌ *Tu reserva ha sido cancelada.*\n\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}\n\nPara cualquier consulta: 828 810 938`, { parse_mode: 'Markdown' }); } catch (e) {}
+    }
+  } catch (err) {
+    console.error(err);
+    bot.sendMessage(OWNER_CHAT_ID, `❌ ID no válido. Copia el ID completo desde /pendientes o /asignadas.`);
+  }
 });
 
 bot.onText(/\/conductores/, async (msg) => {
@@ -523,10 +580,12 @@ bot.on('callback_query', async (query) => {
       if (!reserva || reserva.estado === 'cancelada') { bot.answerCallbackQuery(query.id, { text: 'Ya cancelada.' }); return; }
       reserva.estado = 'cancelada';
       await reserva.save();
+      // Anular la comisión del conductor: una reserva cancelada no genera cobro
+      const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
       bot.editMessageText(`❌ *Reserva cancelada correctamente.*`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
       bot.sendMessage(OWNER_CHAT_ID, `❌ *Cancelada por cliente*\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
       if (reserva.conductorAsignado) {
-        try { bot.sendMessage(reserva.conductorAsignado, `❌ *Servicio cancelado*\n\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}`, { parse_mode: 'Markdown' }); } catch (e) {}
+        try { bot.sendMessage(reserva.conductorAsignado, `❌ *Servicio cancelado*\n\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}${comisionesBorradas.deletedCount > 0 ? '\n\n💰 La comisión de este servicio ha sido anulada.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
       }
       bot.answerCallbackQuery(query.id, { text: '❌ Reserva cancelada' });
     } catch (err) { console.error(err); }
