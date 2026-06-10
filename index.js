@@ -210,12 +210,15 @@ async function determinarTarifa(fecha, hora) {
   return 'nocturna';
 }
 
-async function calcularDistanciaKm(origen, destino) {
+async function calcularDistanciaKm(origen, destino, origenCoords, destinoCoords) {
   return new Promise((resolve, reject) => {
-    const origenEnc = encodeURIComponent(origen + ', Las Palmas de Gran Canaria, España');
-    const destinoEnc = encodeURIComponent(destino + ', Las Palmas de Gran Canaria, España');
+    // Si hay coordenadas exactas (elegidas del autocompletar), se usan tal cual.
+    // Si no, se usa el texto con la ciudad añadida (Google adivina el punto).
+    const origenParam = origenCoords ? origenCoords : (origen + ', Las Palmas de Gran Canaria, España');
+    const destinoParam = destinoCoords ? destinoCoords : (destino + ', Las Palmas de Gran Canaria, España');
+    const origenEnc = encodeURIComponent(origenParam);
+    const destinoEnc = encodeURIComponent(destinoParam);
     // Directions API: calcula la ruta igual que la app de Google Maps.
-    // departure_time=now + traffic_model=best_guess => ruta recomendada con tráfico real.
     const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origenEnc}&destination=${destinoEnc}&key=${GOOGLE_MAPS_KEY}&language=es&region=es&departure_time=now&traffic_model=best_guess&alternatives=false`;
     https.get(url, (res) => {
       let data = '';
@@ -224,7 +227,6 @@ async function calcularDistanciaKm(origen, destino) {
         try {
           const json = JSON.parse(data);
           if (json.status === 'OK' && json.routes && json.routes.length > 0) {
-            // Sumar la distancia de todos los tramos (legs) de la ruta recomendada
             const ruta = json.routes[0];
             let metros = 0;
             for (const leg of ruta.legs) metros += leg.distance.value;
@@ -247,7 +249,7 @@ function calcularPrecio(distanciaKm, tipo, esAeropuerto) {
 }
 
 app.post('/calcular-tarifa', async (req, res) => {
-  const { origen, destino, fecha, hora } = req.body;
+  const { origen, destino, fecha, hora, origenCoords, destinoCoords } = req.body;
   if (!cumpleAntelacion(fecha, hora)) {
     return res.json({
       ok: false,
@@ -255,7 +257,7 @@ app.post('/calcular-tarifa', async (req, res) => {
     });
   }
   try {
-    const distanciaKm = await calcularDistanciaKm(origen, destino);
+    const distanciaKm = await calcularDistanciaKm(origen, destino, origenCoords, destinoCoords);
     const tipo = await determinarTarifa(fecha, hora);
     const esAeropuerto =
       origen.toLowerCase().includes('aeropuerto') || origen.toLowerCase().includes('lpa') || origen.toLowerCase().includes('gando') ||
