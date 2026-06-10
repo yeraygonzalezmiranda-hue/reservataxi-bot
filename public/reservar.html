@@ -271,7 +271,7 @@
 
     <div class="field">
       <label>Origen (dirección de recogida) *</label>
-      <input type="text" id="origen" placeholder="Ej. Aeropuerto LPA o C/ Mayor 5" oninput="checkAirport(); calcularTarifa()" />
+      <input type="text" id="origen" placeholder="Ej. Aeropuerto LPA o C/ Mayor 5" oninput="origenCoords=null; checkAirport(); calcularTarifa()" autocomplete="off" />
       <div class="error-msg" id="err-origen">Por favor introduce el origen</div>
     </div>
 
@@ -289,7 +289,7 @@
 
     <div class="field">
       <label>Destino *</label>
-      <input type="text" id="destino" placeholder="Ej. Hotel Santa Catalina" oninput="calcularTarifa()" />
+      <input type="text" id="destino" placeholder="Ej. Hotel Santa Catalina" oninput="destinoCoords=null; calcularTarifa()" autocomplete="off" />
       <div class="error-msg" id="err-destino">Por favor introduce el destino</div>
     </div>
 
@@ -346,6 +346,46 @@
 
   var tarifaCalculada = null;
   var calculandoTimer = null;
+  var origenCoords = null;   // Coordenadas exactas del origen (si se elige del autocompletar)
+  var destinoCoords = null;  // Coordenadas exactas del destino
+
+  // Autocompletar de Google, limitado a Gran Canaria
+  function initAutocomplete() {
+    // Caja delimitadora de Gran Canaria (suroeste y noreste aprox.)
+    const granCanaria = new google.maps.LatLngBounds(
+      new google.maps.LatLng(27.70, -15.90),
+      new google.maps.LatLng(28.20, -15.30)
+    );
+    const opciones = {
+      bounds: granCanaria,
+      strictBounds: true,
+      componentRestrictions: { country: 'es' },
+      fields: ['formatted_address', 'geometry', 'name']
+    };
+
+    const acOrigen = new google.maps.places.Autocomplete(document.getElementById('origen'), opciones);
+    acOrigen.addListener('place_changed', () => {
+      const place = acOrigen.getPlace();
+      if (place.geometry) {
+        origenCoords = place.geometry.location.lat() + ',' + place.geometry.location.lng();
+      } else {
+        origenCoords = null;
+      }
+      checkAirport();
+      calcularTarifa();
+    });
+
+    const acDestino = new google.maps.places.Autocomplete(document.getElementById('destino'), opciones);
+    acDestino.addListener('place_changed', () => {
+      const place = acDestino.getPlace();
+      if (place.geometry) {
+        destinoCoords = place.geometry.location.lat() + ',' + place.geometry.location.lng();
+      } else {
+        destinoCoords = null;
+      }
+      calcularTarifa();
+    });
+  }
 
   function checkAirport() {
     const origen = document.getElementById('origen').value.toLowerCase();
@@ -373,7 +413,7 @@
         const res = await fetch('/calcular-tarifa', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ origen, destino, fecha, hora })
+          body: JSON.stringify({ origen, destino, fecha, hora, origenCoords, destinoCoords })
         });
         const data = await res.json();
         if (data.ok) {
@@ -451,6 +491,8 @@
       hora: document.getElementById('hora').value,
       origen: document.getElementById('origen').value.trim(),
       destino: document.getElementById('destino').value.trim(),
+      origenCoords: origenCoords,
+      destinoCoords: destinoCoords,
       pasajeros: document.getElementById('pasajeros').value,
       observaciones: document.getElementById('observaciones').value.trim(),
       vuelo: airportVisible ? document.getElementById('vuelo').value.trim() : '',
@@ -494,6 +536,9 @@
     window.scrollTo(0, 0);
   }
 </script>
+
+<!-- Google Maps Places (autocompletar de direcciones) -->
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC-j7pIX5cQXYX7m4AlWTTGQEkJTrgM4vw&libraries=places&language=es&region=ES&callback=initAutocomplete" async defer></script>
 
 </body>
 </html>
