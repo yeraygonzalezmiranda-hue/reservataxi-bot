@@ -5,12 +5,36 @@ const path = require('path');
 const https = require('https');
 const nodemailer = require('nodemailer');
 
-const TOKEN = process.env.BOT_TOKEN || '8707482336:AAETg0jJ6F5VgLcHCDYqeEHxemnZeALcMPI';
+const TOKEN = process.env.BOT_TOKEN;
 const PORT = process.env.PORT || 3000;
 const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID || '898842399';
 const MONGODB_URI = process.env.MONGODB_URI;
 const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_KEY;
 const COMISION_PORCENTAJE = 10;
+const MINIMO_HORAS_ANTELACION = 2;
+
+if (!TOKEN) {
+  console.error('ERROR: Falta la variable BOT_TOKEN en Railway.');
+  process.exit(1);
+}
+
+// =================== ANTELACIÓN MÍNIMA ===================
+
+// Hora actual en Canarias (el servidor de Railway funciona en UTC)
+function ahoraCanarias() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Atlantic/Canary' }));
+}
+
+function cumpleAntelacion(fecha, hora) {
+  try {
+    const fechaReserva = new Date(`${fecha}T${hora}:00`);
+    if (isNaN(fechaReserva)) return false;
+    const minutos = (fechaReserva - ahoraCanarias()) / 60000;
+    return minutos >= MINIMO_HORAS_ANTELACION * 60;
+  } catch (e) {
+    return false;
+  }
+}
 
 // =================== EMAIL ===================
 
@@ -25,7 +49,11 @@ const mailer = nodemailer.createTransport({
 });
 
 async function enviarEmailConfirmacion(datos) {
-  if (!datos.correo) return;
+  if (!datos.correo) {
+    console.log('Reserva sin correo, no se envía email:', datos.nombre);
+    try { bot.sendMessage(OWNER_CHAT_ID, `⚠️ La reserva de *${datos.nombre}* no tiene correo, no se envió email de confirmación.`, { parse_mode: 'Markdown' }); } catch (e) {}
+    return;
+  }
   try {
     const precioHtml = datos.precioEstimado ? `<p><strong>Precio estimado:</strong> ${datos.precioEstimado} €</p>` : '';
     await mailer.sendMail({
@@ -44,13 +72,15 @@ async function enviarEmailConfirmacion(datos) {
           ${precioHtml}
         </div>
         <p>🚖 Un conductor estará en el punto de recogida a la hora indicada.</p>
-        <p>📞 Para cancelar o consultas: <strong>652 875 437</strong></p>
+        <p>📞 Para cancelar o consultas: <strong>828 810 938</strong></p>
         <p>✉️ reservas@taxilaspalmasdegrancanaria.com</p>
       </div>`
     });
     console.log('Email Brevo enviado a:', datos.correo);
+    try { bot.sendMessage(OWNER_CHAT_ID, `📧 Email de confirmación enviado a ${datos.correo}`); } catch (e) {}
   } catch (err) {
     console.error('Error email Brevo:', err.message);
+    try { bot.sendMessage(OWNER_CHAT_ID, `❌ Error al enviar email a ${datos.correo}: ${err.message}`); } catch (e) {}
   }
 }
 
@@ -178,6 +208,12 @@ function calcularPrecio(distanciaKm, tipo, esAeropuerto) {
 
 app.post('/calcular-tarifa', async (req, res) => {
   const { origen, destino, fecha, hora } = req.body;
+  if (!cumpleAntelacion(fecha, hora)) {
+    return res.json({
+      ok: false,
+      error: `No realizamos servicios inmediatos. Las reservas requieren un mínimo de ${MINIMO_HORAS_ANTELACION} horas de antelación. Consultas: 828 810 938.`
+    });
+  }
   try {
     const distanciaKm = await calcularDistanciaKm(origen, destino);
     const tipo = await determinarTarifa(fecha, hora);
@@ -239,7 +275,7 @@ async function obtenerResumenMesConductor(conductorChatId, mes) {
 
 function iniciarResumenMensual() {
   setInterval(async () => {
-    const ahora = new Date();
+    const ahora = ahoraCanarias();
     if (ahora.getDate() === 1 && ahora.getHours() === 9 && ahora.getMinutes() < 5) {
       const mesAnterior = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
       const mes = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, '0')}`;
@@ -464,9 +500,9 @@ bot.on('callback_query', async (query) => {
         } catch (e) {}
       }
 
-      if (!reserva.clienteChatId || reserva.datos.fuente === 'web') {
-        await enviarEmailConfirmacion(reserva.datos);
-      }
+      // Enviar email de confirmación SIEMPRE (web, WhatsApp, Telegram, Facebook...)
+      // Solo se omite si la reserva no tiene correo.
+      await enviarEmailConfirmacion(reserva.datos);
 
       bot.answerCallbackQuery(query.id, { text: '✅ ¡Reserva aceptada!' });
     } catch (err) {
@@ -507,7 +543,7 @@ bot.on('callback_query', async (query) => {
 function iniciarRecordatorios() {
   setInterval(async () => {
     try {
-      const ahora = new Date();
+      const ahora = ahoraCanarias();
       const en60min = new Date(ahora.getTime() + 60 * 60 * 1000);
       const en55min = new Date(ahora.getTime() + 55 * 60 * 1000);
       const reservas = await Reserva.find({ estado: 'asignada', recordatorioEnviado: false, fechaServicio: { $gte: en55min, $lte: en60min } });
@@ -544,6 +580,14 @@ function formatearReserva(data, paraAdmin = false) {
 
 app.post('/reserva', async (req, res) => {
   const { clienteChatId, ...data } = req.body;
+
+  if (!cumpleAntelacion(data.fecha, data.hora)) {
+    return res.json({
+      ok: false,
+      error: `No realizamos servicios inmediatos. Las reservas requieren un mínimo de ${MINIMO_HORAS_ANTELACION} horas de antelación. Consultas: 828 810 938.`
+    });
+  }
+
   let fechaServicio = null;
   try { fechaServicio = new Date(`${data.fecha}T${data.hora}:00`); } catch (e) {}
 
