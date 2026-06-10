@@ -11,6 +11,11 @@ const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID || '898842399';
 const MONGODB_URI = process.env.MONGODB_URI;
 const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_KEY;
 const COMISION_PORCENTAJE = 10;
+const MIN_ANTELACION_HORAS = 2;
+
+// Railway suele trabajar en UTC. Para comparar bien fecha/hora del formulario,
+// usamos horario de Canarias por defecto. También puedes poner TZ=Atlantic/Canary en Railway.
+process.env.TZ = process.env.TZ || 'Atlantic/Canary';
 
 // =================== EMAIL ===================
 
@@ -464,7 +469,9 @@ bot.on('callback_query', async (query) => {
         } catch (e) {}
       }
 
-      if (!reserva.clienteChatId || reserva.datos.fuente === 'web') {
+      // Enviar confirmación por email siempre que la reserva tenga correo.
+      // Esto funciona tanto si viene desde Telegram como si viene desde WhatsApp/web.
+      if (reserva.datos && reserva.datos.correo) {
         await enviarEmailConfirmacion(reserva.datos);
       }
 
@@ -540,12 +547,56 @@ function formatearReserva(data, paraAdmin = false) {
   return msg;
 }
 
+// =================== VALIDACIÓN DE HORARIO ===================
+
+function validarReservaConAntelacion(data) {
+  if (!data || !data.fecha || !data.hora) {
+    return {
+      ok: false,
+      error: 'Debes indicar fecha y hora de la reserva.'
+    };
+  }
+
+  const fechaServicio = new Date(`${data.fecha}T${data.hora}:00`);
+
+  if (Number.isNaN(fechaServicio.getTime())) {
+    return {
+      ok: false,
+      error: 'La fecha u hora de la reserva no es válida.'
+    };
+  }
+
+  const ahora = new Date();
+  const diferenciaMs = fechaServicio.getTime() - ahora.getTime();
+  const minMs = MIN_ANTELACION_HORAS * 60 * 60 * 1000;
+
+  if (diferenciaMs < minMs) {
+    return {
+      ok: false,
+      error: `Las reservas deben realizarse con al menos ${MIN_ANTELACION_HORAS} horas de antelación.`
+    };
+  }
+
+  return {
+    ok: true,
+    fechaServicio
+  };
+}
+
 // =================== RESERVAS ===================
 
 app.post('/reserva', async (req, res) => {
   const { clienteChatId, ...data } = req.body;
-  let fechaServicio = null;
-  try { fechaServicio = new Date(`${data.fecha}T${data.hora}:00`); } catch (e) {}
+
+  const validacionHorario = validarReservaConAntelacion(data);
+  if (!validacionHorario.ok) {
+    return res.status(400).json({
+      ok: false,
+      error: validacionHorario.error
+    });
+  }
+
+  const fechaServicio = validacionHorario.fechaServicio;
 
   try {
     const conductores = await Conductor.find({ activo: true });
