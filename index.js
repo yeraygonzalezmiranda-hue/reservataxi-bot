@@ -230,6 +230,9 @@ async function calcularDistanciaKm(origen, destino, origenCoords, destinoCoords)
             const ruta = json.routes[0];
             let metros = 0;
             for (const leg of ruta.legs) metros += leg.distance.value;
+            // Ajuste fijo: la API suele dar de más, se restan 800 m al recorrido.
+            metros = metros - 800;
+            if (metros < 0) metros = 0;
             resolve(Math.round(metros / 100) / 10);
           } else {
             reject(new Error('Ruta no encontrada'));
@@ -287,6 +290,8 @@ async function registrarComision(reserva, conductorChatId) {
   const comision = Math.round(precio * COMISION_PORCENTAJE) / 100;
   const ahora = new Date();
   const mes = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
+  // Limpiar cualquier comisión pendiente previa de esta reserva (p. ej. de un conductor anterior tras reasignar)
+  await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
   await Comision.create({
     conductorChatId,
     conductorNombre: conductor ? conductor.nombre : 'Desconocido',
@@ -350,7 +355,7 @@ bot.onText(/\/start/, async (msg) => {
   const nombre = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
   if (chatId === OWNER_CHAT_ID) {
     bot.sendMessage(chatId,
-      '🚖 *Panel de Administración*\n\n📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n🚫 /cancelarreserva ID\n👥 /conductores\n📊 /resumen\n\n💰 *Comisiones:*\n/deudas\n/pagado NombreConductor\n\n📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
+      '🚖 *Panel de Administración*\n\n📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n🚫 /cancelarreserva ID\n🔄 /reasignar ID\n👥 /conductores\n📊 /resumen\n\n💰 *Comisiones:*\n/deudas\n/pagado NombreConductor\n\n📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
       { parse_mode: 'Markdown' }
     );
     return;
@@ -450,7 +455,7 @@ bot.onText(/\/asignadas/, async (msg) => {
   if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '✅ No hay asignadas.');
   let texto = `✅ *ASIGNADAS (${reservas.length})*\n\n`;
   reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n   🆔 \`${r._id}\`\n\n`; });
-  texto += `\n💡 Para cancelar: /cancelarreserva ID`;
+  texto += `\n💡 Cancelar: /cancelarreserva ID\n🔄 Cambiar de taxista: /reasignar ID`;
   bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
 });
 
@@ -488,6 +493,35 @@ bot.onText(/\/cancelarreserva (.+)/, async (msg, match) => {
   } catch (err) {
     console.error(err);
     bot.sendMessage(OWNER_CHAT_ID, `❌ ID no válido. Copia el ID completo desde /pendientes o /asignadas.`);
+  }
+});
+
+bot.onText(/\/reasignar (.+)/, async (msg, match) => {
+  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
+  const reservaId = match[1].trim();
+  try {
+    const reserva = await Reserva.findById(reservaId);
+    if (!reserva) return bot.sendMessage(OWNER_CHAT_ID, `❌ No se encontró ninguna reserva con ese ID.`);
+    if (reserva.estado === 'cancelada') return bot.sendMessage(OWNER_CHAT_ID, `⚠️ Esa reserva está cancelada, no se puede reasignar.`);
+    if (reserva.estado === 'pendiente') return bot.sendMessage(OWNER_CHAT_ID, `⚠️ Esa reserva ya está pendiente, ningún conductor la tiene asignada.`);
+
+    const conductorAnterior = reserva.conductorAsignado;
+    const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
+
+    if (conductorAnterior) {
+      try { bot.sendMessage(conductorAnterior, `🔄 *Servicio reasignado*\n\nEl servicio del ${reserva.datos.fecha} a las ${reserva.datos.hora} (${reserva.datos.origen} → ${reserva.datos.destino}) ha sido retirado y ofrecido a otros conductores.${comisionesBorradas.deletedCount > 0 ? '\n\n💰 La comisión de este servicio ya no se te cobrará.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
+    }
+
+    reserva.estado = 'pendiente';
+    reserva.conductorAsignado = null;
+    reserva.mensajesEnviados = [];
+    await reserva.save();
+
+    const numConductores = await repartirReservaAConductores(reserva);
+    bot.sendMessage(OWNER_CHAT_ID, `🔄 *Reserva reasignada*\n\nVuelve a estar pendiente y se ha enviado a ${numConductores} conductor(es). La comisión pasará a quien la acepte.\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
+  } catch (err) {
+    console.error(err);
+    bot.sendMessage(OWNER_CHAT_ID, `❌ ID no válido. Copia el ID completo desde /asignadas.`);
   }
 });
 
@@ -529,6 +563,28 @@ bot.onText(/\/cancelar/, async (msg) => {
 });
 
 // =================== CALLBACKS ===================
+
+// Reparte una reserva (ya existente y en estado pendiente) a todos los conductores activos.
+async function repartirReservaAConductores(reserva) {
+  const conductores = await Conductor.find({ activo: true });
+  const mensajesEnviados = [];
+  const texto = `🚖 *NUEVA RESERVA DISPONIBLE*\n\n${formatearReserva(reserva.datos, false)}\n⏰ Responde rápido para aceptarla.`;
+  for (const conductor of conductores) {
+    try {
+      const msg = await bot.sendMessage(conductor.chatId, texto, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: [[
+          { text: '✅ Aceptar', callback_data: `aceptar_${reserva._id}` },
+          { text: '❌ Rechazar', callback_data: `rechazar_${reserva._id}` }
+        ]]}
+      });
+      mensajesEnviados.push({ chatId: conductor.chatId, messageId: msg.message_id });
+    } catch (e) { console.error(`Error enviando a conductor:`, e.message); }
+  }
+  reserva.mensajesEnviados = mensajesEnviados;
+  await reserva.save();
+  return conductores.length;
+}
 
 bot.on('callback_query', async (query) => {
   const chatId = String(query.message.chat.id);
