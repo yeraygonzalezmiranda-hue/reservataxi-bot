@@ -453,7 +453,7 @@ bot.onText(/\/start/, async (msg) => {
   const nombre = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
   if (chatId === OWNER_CHAT_ID) {
     bot.sendMessage(chatId,
-      '🚖 *Panel de Administración*\n\n📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n🚫 /cancelarreserva ID\n🔄 /reasignar ID\n\n👥 /conductores\n🔴 /desactivar Nombre\n🟢 /activar Nombre\n📊 /resumen\n\n💰 *Comisiones:*\n/deudas\n/pagado NombreConductor\n\n📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
+      '🚖 *Panel de Administración*\n\n📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n🚫 /cancelarreserva ID\n🔄 /reasignar ID\n\n👥 /conductores\n🔴 /desactivar Nombre\n🟢 /activar Nombre\n🗑️ /eliminarconductor Nombre\n📊 /resumen\n\n💰 *Comisiones:*\n/deudas\n/pagado NombreConductor\n\n📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
       { parse_mode: 'Markdown' }
     );
     return;
@@ -655,6 +655,24 @@ bot.onText(/\/activar (.+)/, async (msg, match) => {
   try { bot.sendMessage(conductor.chatId, `🟢 Ya estás activo de nuevo. Volverás a recibir reservas.`); } catch (e) {}
 });
 
+bot.onText(/\/eliminarconductor (.+)/, async (msg, match) => {
+  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
+  const nombre = match[1].trim();
+  const conductor = await Conductor.findOne({ nombre: new RegExp(nombre, 'i') });
+  if (!conductor) return bot.sendMessage(OWNER_CHAT_ID, `❌ No encontrado: "${nombre}"`);
+  // Pedir confirmación con botón, porque es permanente
+  bot.sendMessage(OWNER_CHAT_ID,
+    `⚠️ *¿Eliminar a ${conductor.nombre} definitivamente?*\n\nEsta acción es permanente: se borra el conductor del sistema. Su historial de comisiones ya cobradas se conserva.\n\nSi solo quieres que deje de recibir reservas temporalmente, usa /desactivar.`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: [[
+        { text: '🗑️ Sí, eliminar', callback_data: `delconductor_${conductor.chatId}` },
+        { text: '↩️ No, cancelar', callback_data: 'no_delconductor' }
+      ]]}
+    }
+  );
+});
+
 bot.onText(/\/resumen/, async (msg) => {
   if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
   const hoy = new Date(); hoy.setHours(0,0,0,0);
@@ -809,6 +827,27 @@ bot.on('callback_query', async (query) => {
   if (data === 'no_cancelar') {
     bot.editMessageText(`✅ Tu reserva sigue activa.`, { chat_id: chatId, message_id: messageId });
     bot.answerCallbackQuery(query.id, { text: 'Cancelación abortada' });
+  }
+
+  if (data.startsWith('delconductor_')) {
+    if (chatId !== OWNER_CHAT_ID) { bot.answerCallbackQuery(query.id); return; }
+    const conductorChatId = data.replace('delconductor_', '');
+    try {
+      const conductor = await Conductor.findOne({ chatId: conductorChatId });
+      if (!conductor) { bot.editMessageText(`❌ El conductor ya no existe.`, { chat_id: chatId, message_id: messageId }); bot.answerCallbackQuery(query.id); return; }
+      const nombre = conductor.nombre;
+      await Conductor.deleteOne({ chatId: conductorChatId });
+      bot.editMessageText(`🗑️ Conductor *${nombre}* eliminado del sistema.`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+      bot.answerCallbackQuery(query.id, { text: 'Conductor eliminado' });
+    } catch (err) {
+      console.error(err);
+      bot.answerCallbackQuery(query.id, { text: 'Error al eliminar.' });
+    }
+  }
+
+  if (data === 'no_delconductor') {
+    bot.editMessageText(`↩️ Eliminación cancelada. El conductor sigue en el sistema.`, { chat_id: chatId, message_id: messageId });
+    bot.answerCallbackQuery(query.id, { text: 'Cancelado' });
   }
 });
 
