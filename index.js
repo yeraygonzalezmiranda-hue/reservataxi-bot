@@ -616,7 +616,7 @@ bot.onText(/\/reasignar (.+)/, async (msg, match) => {
     await reserva.save();
 
     const numConductores = await repartirReservaAConductores(reserva);
-    bot.sendMessage(OWNER_CHAT_ID, `🔄 *Reserva reasignada*\n\nVuelve a estar pendiente y se ha enviado a ${numConductores} conductor(es). La comisión pasará a quien la acepte.\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
+    bot.sendMessage(OWNER_CHAT_ID, `🔄 Reserva reasignada\n\nVuelve a estar pendiente y se ha enviado a ${numConductores} conductor(es). La comisión pasará a quien la acepte.\n\n${formatearReserva(reserva.datos, true)}`);
   } catch (err) {
     console.error(err);
     bot.sendMessage(OWNER_CHAT_ID, `❌ ID no válido. Copia el ID completo desde /asignadas.`);
@@ -735,7 +735,7 @@ bot.on('callback_query', async (query) => {
         parse_mode: 'Markdown',
         reply_markup: { inline_keyboard: [[ { text: '🏁 Marcar servicio completado', callback_data: `completar_${reserva._id}` } ]] }
       });
-      bot.sendMessage(OWNER_CHAT_ID, `✅ *Reserva asignada* — ${numReserva(reserva.numero)}\n\nConductor: ${nombreConductor}\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
+      bot.sendMessage(OWNER_CHAT_ID, `✅ Reserva asignada — ${numReserva(reserva.numero)}\n\nConductor: ${nombreConductor}\n\n${formatearReserva(reserva.datos, true)}`);
 
       for (const msg of reserva.mensajesEnviados) {
         if (msg.chatId !== chatId) {
@@ -779,7 +779,7 @@ bot.on('callback_query', async (query) => {
       if (reserva.conductorAsignado !== chatId) { bot.answerCallbackQuery(query.id, { text: 'Este servicio no es tuyo.', show_alert: true }); return; }
       reserva.estado = 'completada';
       await reserva.save();
-      bot.editMessageText(`🏁 *Servicio completado* — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, false)}\n✅ ¡Gracias!`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+      bot.editMessageText(`🏁 Servicio completado — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, false)}\n✅ ¡Gracias!`, { chat_id: chatId, message_id: messageId });
       bot.sendMessage(OWNER_CHAT_ID, `🏁 *Servicio completado* — ${numReserva(reserva.numero)}\n\nConductor: ${reserva.conductorNombre || 'Desconocido'}\n${reserva.datos.origen} → ${reserva.datos.destino}`, { parse_mode: 'Markdown' });
       bot.answerCallbackQuery(query.id, { text: '🏁 Servicio marcado como completado' });
     } catch (err) {
@@ -798,7 +798,7 @@ bot.on('callback_query', async (query) => {
       // Anular la comisión del conductor: una reserva cancelada no genera cobro
       const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
       bot.editMessageText(`❌ *Reserva cancelada correctamente.*`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-      bot.sendMessage(OWNER_CHAT_ID, `❌ *Cancelada por cliente*\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
+      bot.sendMessage(OWNER_CHAT_ID, `❌ Cancelada por cliente\n\n${formatearReserva(reserva.datos, true)}`);
       if (reserva.conductorAsignado) {
         try { bot.sendMessage(reserva.conductorAsignado, `❌ *Servicio cancelado*\n\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}${comisionesBorradas.deletedCount > 0 ? '\n\n💰 La comisión de este servicio ha sido anulada.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
       }
@@ -824,8 +824,8 @@ function iniciarRecordatorios() {
       // 1) Recordatorio al TAXISTA (1h antes)
       const reservas = await Reserva.find({ estado: 'asignada', recordatorioEnviado: false, fechaServicio: { $gte: en55min, $lte: en60min } });
       for (const reserva of reservas) {
-        try { bot.sendMessage(reserva.conductorAsignado, `⏰ *RECORDATORIO — Servicio en 1 hora* — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, false)}`, { parse_mode: 'Markdown' }); } catch (e) {}
-        bot.sendMessage(OWNER_CHAT_ID, `⏰ *Recordatorio enviado al taxista*\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
+        try { bot.sendMessage(reserva.conductorAsignado, `⏰ RECORDATORIO — Servicio en 1 hora — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, false)}`); } catch (e) {}
+        bot.sendMessage(OWNER_CHAT_ID, `⏰ Recordatorio enviado al taxista\n\n${formatearReserva(reserva.datos, true)}`);
         reserva.recordatorioEnviado = true;
         await reserva.save();
       }
@@ -863,7 +863,7 @@ function iniciarRecordatorios() {
       const hace10min = new Date(Date.now() - 10 * 60 * 1000);
       const sinAceptar = await Reserva.find({ estado: 'pendiente', avisoSinAceptarEnviado: false, fechaCreacion: { $lte: hace10min } });
       for (const reserva of sinAceptar) {
-        bot.sendMessage(OWNER_CHAT_ID, `⚠️ *Reserva sin aceptar* — ${numReserva(reserva.numero)}\n\nLleva más de 10 minutos pendiente y ningún taxista la ha aceptado.\n\n${formatearReserva(reserva.datos, true)}\n\n🆔 \`${reserva._id}\``, { parse_mode: 'Markdown' });
+        bot.sendMessage(OWNER_CHAT_ID, `⚠️ Reserva sin aceptar — ${numReserva(reserva.numero)}\n\nLleva más de 10 minutos pendiente y ningún taxista la ha aceptado.\n\n${formatearReserva(reserva.datos, true)}\n\n🆔 ${reserva._id}`);
         // Reenviar a los taxistas para que vuelva a sonar
         try { await repartirReservaAConductores(reserva); } catch (e) {}
         reserva.avisoSinAceptarEnviado = true;
@@ -897,13 +897,12 @@ function formatearReserva(data, nivel = 'taxista') {
   let msg = '';
 
   if (nivel === 'disponible') {
-    // Reserva ofrecida a todos los taxistas: SIN datos personales del cliente
+    // Estado PENDIENTE: solo municipio, fecha, hora, pasajeros y destino.
+    // Se ocultan origen exacto, precio y datos del cliente hasta que un taxista acepta.
     msg += lineaMunicipio(data);
-    msg += `\n📅 *Fecha:* ${data.fecha} a las ${data.hora}\n`;
-    msg += `📍 *Origen:* ${data.origen}\n`;
-    msg += `🏁 *Destino:* ${data.destino}\n`;
-    msg += `👥 *Pasajeros:* ${data.pasajeros}\n`;
-    if (data.precioEstimado) msg += `💰 *Precio estimado:* ${data.precioEstimado} €\n`;
+    msg += `\n📅 Fecha: ${data.fecha} a las ${data.hora}\n`;
+    msg += `🏁 Destino: ${data.destino}\n`;
+    msg += `👥 Pasajeros: ${data.pasajeros}\n`;
     return msg;
   }
 
@@ -949,7 +948,7 @@ app.post('/reserva', async (req, res) => {
   try {
     const conductores = await Conductor.find({ activo: true });
     if (!conductores.length) {
-      await bot.sendMessage(OWNER_CHAT_ID, `🚖 *NUEVA RESERVA* (sin conductores)\n\n${formatearReserva(data, true)}`, { parse_mode: 'Markdown' });
+      await bot.sendMessage(OWNER_CHAT_ID, `🚖 NUEVA RESERVA (sin conductores)\n\n${formatearReserva(data, true)}`);
       return res.json({ ok: true });
     }
 
@@ -974,7 +973,7 @@ app.post('/reserva', async (req, res) => {
 
     reserva.mensajesEnviados = mensajesEnviados;
     await reserva.save();
-    await bot.sendMessage(OWNER_CHAT_ID, `📨 *Nueva reserva enviada a ${conductores.length} conductor(es)*\n\n${formatearReserva(data, true)}`, { parse_mode: 'Markdown' });
+    await bot.sendMessage(OWNER_CHAT_ID, `📨 Nueva reserva enviada a ${conductores.length} conductor(es)\n\n${formatearReserva(data, true)}`);
     res.json({ ok: true, reservaId: reserva._id });
   } catch (err) {
     console.error(err);
@@ -1045,7 +1044,7 @@ app.get('/cancelar-confirmar', async (req, res) => {
     // Anular comisión del conductor
     const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
     // Avisar al admin
-    bot.sendMessage(OWNER_CHAT_ID, `❌ *Cancelada por el cliente (web)*\n\n${formatearReserva(reserva.datos, true)}${comisionesBorradas.deletedCount > 0 ? '\n💰 Comisión anulada al conductor.' : ''}`, { parse_mode: 'Markdown' });
+    bot.sendMessage(OWNER_CHAT_ID, `❌ Cancelada por el cliente (web)\n\n${formatearReserva(reserva.datos, true)}${comisionesBorradas.deletedCount > 0 ? '\n💰 Comisión anulada al conductor.' : ''}`);
     // Avisar al conductor asignado
     if (reserva.conductorAsignado) {
       try { bot.sendMessage(reserva.conductorAsignado, `❌ *Servicio cancelado por el cliente*\n\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}${comisionesBorradas.deletedCount > 0 ? '\n\n💰 La comisión de este servicio ha sido anulada.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
