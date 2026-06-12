@@ -65,7 +65,7 @@ function enviarEmailBrevo(payload) {
   });
 }
 
-async function enviarEmailConfirmacion(datos, reservaId) {
+async function enviarEmailConfirmacion(datos, reservaId, nombreConductor, numero) {
   if (!datos.correo) {
     console.log('Reserva sin correo, no se envía email:', datos.nombre);
     try { bot.sendMessage(OWNER_CHAT_ID, `⚠️ La reserva de *${datos.nombre}* no tiene correo, no se envió email de confirmación.`, { parse_mode: 'Markdown' }); } catch (e) {}
@@ -78,6 +78,9 @@ async function enviarEmailConfirmacion(datos, reservaId) {
   }
   try {
     const precioHtml = datos.precioEstimado ? `<p><strong>Precio estimado:</strong> ${datos.precioEstimado} €</p>` : '';
+    const numeroHtml = numero ? `<p>🎫 <strong>Nº de reserva:</strong> RT-${String(numero).padStart(4, '0')}</p>` : '';
+    // Solo el NOMBRE del conductor, nunca su teléfono.
+    const conductorHtml = nombreConductor ? `<p>🚖 <strong>Tu conductor:</strong> ${nombreConductor}</p>` : '';
     const base = process.env.BASE_URL || '';
     const cancelarHtml = (reservaId && base) ? `
         <div style="background:#fff;border:1px solid #f0d0d0;border-radius:8px;padding:16px;margin:16px 0;text-align:center;">
@@ -94,6 +97,8 @@ async function enviarEmailConfirmacion(datos, reservaId) {
         <h3 style="color:#2d8a2d;">✅ Tu reserva ha sido confirmada</h3>
         <p>Hola <strong>${datos.nombre}</strong>, un conductor ha aceptado tu servicio.</p>
         <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:16px;margin:16px 0;">
+          ${numeroHtml}
+          ${conductorHtml}
           <p>📅 <strong>Fecha:</strong> ${datos.fecha} a las ${datos.hora}</p>
           <p>📍 <strong>Origen:</strong> ${datos.origen}</p>
           <p>🏁 <strong>Destino:</strong> ${datos.destino}</p>
@@ -124,15 +129,35 @@ const conductorSchema = new mongoose.Schema({
 });
 
 const reservaSchema = new mongoose.Schema({
+  numero: Number,                                          // Número corto legible (RT-0042)
   datos: Object,
   clienteChatId: String,
-  estado: { type: String, default: 'pendiente' },
+  estado: { type: String, default: 'pendiente' },          // pendiente / asignada / completada / cancelada
   conductorAsignado: String,
+  conductorNombre: String,                                 // Nombre del taxista asignado
   mensajesEnviados: [{ chatId: String, messageId: Number }],
-  recordatorioEnviado: { type: Boolean, default: false },
+  recordatorioEnviado: { type: Boolean, default: false },  // Recordatorio al taxista (1h antes)
+  recordatorioClienteEnviado: { type: Boolean, default: false }, // Recordatorio al cliente (1h antes)
+  avisoSinAceptarEnviado: { type: Boolean, default: false },      // Aviso al admin si nadie acepta en 10 min
   fechaServicio: Date,
   fechaCreacion: { type: Date, default: Date.now }
 });
+
+// Contador para los números de reserva cortos
+const contadorSchema = new mongoose.Schema({
+  nombre: { type: String, unique: true },
+  valor: { type: Number, default: 0 }
+});
+const Contador = mongoose.model('Contador', contadorSchema);
+
+async function siguienteNumeroReserva() {
+  const c = await Contador.findOneAndUpdate(
+    { nombre: 'reserva' },
+    { $inc: { valor: 1 } },
+    { new: true, upsert: true }
+  );
+  return c.valor;
+}
 
 const festivoSchema = new mongoose.Schema({
   fecha: { type: String, unique: true },
@@ -355,7 +380,7 @@ bot.onText(/\/start/, async (msg) => {
   const nombre = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
   if (chatId === OWNER_CHAT_ID) {
     bot.sendMessage(chatId,
-      '🚖 *Panel de Administración*\n\n📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n🚫 /cancelarreserva ID\n🔄 /reasignar ID\n👥 /conductores\n📊 /resumen\n\n💰 *Comisiones:*\n/deudas\n/pagado NombreConductor\n\n📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
+      '🚖 *Panel de Administración*\n\n📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n🚫 /cancelarreserva ID\n🔄 /reasignar ID\n\n👥 /conductores\n🔴 /desactivar Nombre\n🟢 /activar Nombre\n📊 /resumen\n\n💰 *Comisiones:*\n/deudas\n/pagado NombreConductor\n\n📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
       { parse_mode: 'Markdown' }
     );
     return;
@@ -531,7 +556,30 @@ bot.onText(/\/conductores/, async (msg) => {
   if (!conductores.length) return bot.sendMessage(OWNER_CHAT_ID, '👥 No hay conductores.');
   let texto = `👥 *CONDUCTORES (${conductores.length})*\n\n`;
   conductores.forEach((c, i) => { texto += `*${i+1}.* ${c.nombre} — ${c.activo ? '🟢 Activo' : '🔴 Inactivo'}\n`; });
+  texto += `\n💡 Para pausar/activar:\n/desactivar NombreConductor\n/activar NombreConductor`;
   bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/desactivar (.+)/, async (msg, match) => {
+  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
+  const nombre = match[1].trim();
+  const conductor = await Conductor.findOne({ nombre: new RegExp(nombre, 'i') });
+  if (!conductor) return bot.sendMessage(OWNER_CHAT_ID, `❌ No encontrado: "${nombre}"`);
+  conductor.activo = false;
+  await conductor.save();
+  bot.sendMessage(OWNER_CHAT_ID, `🔴 *${conductor.nombre}* desactivado. No recibirá nuevas reservas hasta que lo reactives.`, { parse_mode: 'Markdown' });
+  try { bot.sendMessage(conductor.chatId, `🔴 Has sido puesto en pausa temporalmente. No recibirás reservas hasta nuevo aviso.`); } catch (e) {}
+});
+
+bot.onText(/\/activar (.+)/, async (msg, match) => {
+  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
+  const nombre = match[1].trim();
+  const conductor = await Conductor.findOne({ nombre: new RegExp(nombre, 'i') });
+  if (!conductor) return bot.sendMessage(OWNER_CHAT_ID, `❌ No encontrado: "${nombre}"`);
+  conductor.activo = true;
+  await conductor.save();
+  bot.sendMessage(OWNER_CHAT_ID, `🟢 *${conductor.nombre}* activado. Ya vuelve a recibir reservas.`, { parse_mode: 'Markdown' });
+  try { bot.sendMessage(conductor.chatId, `🟢 Ya estás activo de nuevo. Volverás a recibir reservas.`); } catch (e) {}
 });
 
 bot.onText(/\/resumen/, async (msg) => {
@@ -601,15 +649,20 @@ bot.on('callback_query', async (query) => {
       }
       reserva.estado = 'asignada';
       reserva.conductorAsignado = chatId;
-      await reserva.save();
       const conductor = await Conductor.findOne({ chatId });
       const nombreConductor = conductor ? conductor.nombre : 'Un conductor';
+      reserva.conductorNombre = nombreConductor;
+      await reserva.save();
       const comision = await registrarComision(reserva, chatId);
       const comisionTxt = comision ? `\n💰 Comisión registrada: ${comision}€` : '';
 
-      bot.editMessageText(`✅ *Reserva aceptada*\n\nHas aceptado este servicio.${comisionTxt}`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-      bot.sendMessage(chatId, `📋 *Detalles del servicio:*\n\n${formatearReserva(reserva.datos, false)}`, { parse_mode: 'Markdown' });
-      bot.sendMessage(OWNER_CHAT_ID, `✅ *Reserva asignada*\n\nConductor: ${nombreConductor}\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
+      // Mensaje al taxista con botón de "Servicio completado"
+      bot.editMessageText(`✅ *Reserva aceptada* — ${numReserva(reserva.numero)}\n\nHas aceptado este servicio.${comisionTxt}`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+      bot.sendMessage(chatId, `📋 *Detalles del servicio:*\n\n${formatearReserva(reserva.datos, false)}`, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: [[ { text: '🏁 Marcar servicio completado', callback_data: `completar_${reserva._id}` } ]] }
+      });
+      bot.sendMessage(OWNER_CHAT_ID, `✅ *Reserva asignada* — ${numReserva(reserva.numero)}\n\nConductor: ${nombreConductor}\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
 
       for (const msg of reserva.mensajesEnviados) {
         if (msg.chatId !== chatId) {
@@ -622,7 +675,7 @@ bot.on('callback_query', async (query) => {
         const precioTxt = d.precioEstimado ? `\n💰 *Precio estimado:* ${d.precioEstimado} €` : '';
         try {
           bot.sendMessage(reserva.clienteChatId,
-            `✅ *¡Tu reserva ha sido aceptada!*\n\n📅 *Fecha:* ${d.fecha} a las ${d.hora}\n📍 *Origen:* ${d.origen}\n🏁 *Destino:* ${d.destino}${precioTxt}\n\n🚖 Un conductor estará contigo a la hora indicada.\n\n❌ Para cancelar escribe /cancelar`,
+            `✅ *¡Tu reserva ha sido aceptada!*\n\n🎫 *Reserva:* ${numReserva(reserva.numero)}\n📅 *Fecha:* ${d.fecha} a las ${d.hora}\n📍 *Origen:* ${d.origen}\n🏁 *Destino:* ${d.destino}${precioTxt}\n\n🚖 *Tu conductor:* ${nombreConductor}\nEstará contigo a la hora indicada.\n\n❌ Para cancelar escribe /cancelar`,
             { parse_mode: 'Markdown' }
           );
         } catch (e) {}
@@ -630,7 +683,7 @@ bot.on('callback_query', async (query) => {
 
       // Enviar email de confirmación SIEMPRE (web, WhatsApp, Telegram, Facebook...)
       // Solo se omite si la reserva no tiene correo.
-      await enviarEmailConfirmacion(reserva.datos, reserva._id);
+      await enviarEmailConfirmacion(reserva.datos, reserva._id, nombreConductor, reserva.numero);
 
       bot.answerCallbackQuery(query.id, { text: '✅ ¡Reserva aceptada!' });
     } catch (err) {
@@ -642,6 +695,24 @@ bot.on('callback_query', async (query) => {
   if (data.startsWith('rechazar_')) {
     bot.answerCallbackQuery(query.id, { text: 'Has rechazado este servicio.' });
     bot.editMessageText(`❌ *Servicio rechazado*`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+  }
+
+  if (data.startsWith('completar_')) {
+    const reservaId = data.replace('completar_', '');
+    try {
+      const reserva = await Reserva.findById(reservaId);
+      if (!reserva) { bot.answerCallbackQuery(query.id, { text: 'Reserva no encontrada.' }); return; }
+      if (reserva.estado === 'completada') { bot.answerCallbackQuery(query.id, { text: 'Ya estaba marcada como completada.' }); return; }
+      if (reserva.conductorAsignado !== chatId) { bot.answerCallbackQuery(query.id, { text: 'Este servicio no es tuyo.', show_alert: true }); return; }
+      reserva.estado = 'completada';
+      await reserva.save();
+      bot.editMessageText(`🏁 *Servicio completado* — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, false)}\n✅ ¡Gracias!`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+      bot.sendMessage(OWNER_CHAT_ID, `🏁 *Servicio completado* — ${numReserva(reserva.numero)}\n\nConductor: ${reserva.conductorNombre || 'Desconocido'}\n${reserva.datos.origen} → ${reserva.datos.destino}`, { parse_mode: 'Markdown' });
+      bot.answerCallbackQuery(query.id, { text: '🏁 Servicio marcado como completado' });
+    } catch (err) {
+      console.error(err);
+      bot.answerCallbackQuery(query.id, { text: 'Error. Inténtalo de nuevo.' });
+    }
   }
 
   if (data.startsWith('confirmar_cancelar_')) {
@@ -676,11 +747,53 @@ function iniciarRecordatorios() {
       const ahora = ahoraCanarias();
       const en60min = new Date(ahora.getTime() + 60 * 60 * 1000);
       const en55min = new Date(ahora.getTime() + 55 * 60 * 1000);
+
+      // 1) Recordatorio al TAXISTA (1h antes)
       const reservas = await Reserva.find({ estado: 'asignada', recordatorioEnviado: false, fechaServicio: { $gte: en55min, $lte: en60min } });
       for (const reserva of reservas) {
-        try { bot.sendMessage(reserva.conductorAsignado, `⏰ *RECORDATORIO — Servicio en 1 hora*\n\n${formatearReserva(reserva.datos, false)}`, { parse_mode: 'Markdown' }); } catch (e) {}
-        bot.sendMessage(OWNER_CHAT_ID, `⏰ *Recordatorio enviado*\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
+        try { bot.sendMessage(reserva.conductorAsignado, `⏰ *RECORDATORIO — Servicio en 1 hora* — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, false)}`, { parse_mode: 'Markdown' }); } catch (e) {}
+        bot.sendMessage(OWNER_CHAT_ID, `⏰ *Recordatorio enviado al taxista*\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
         reserva.recordatorioEnviado = true;
+        await reserva.save();
+      }
+
+      // 2) Recordatorio al CLIENTE (1h antes), por email
+      const reservasCliente = await Reserva.find({ estado: { $in: ['asignada'] }, recordatorioClienteEnviado: false, fechaServicio: { $gte: en55min, $lte: en60min } });
+      for (const reserva of reservasCliente) {
+        if (reserva.datos && reserva.datos.correo && BREVO_API_KEY) {
+          try {
+            await enviarEmailBrevo({
+              sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
+              to: [{ email: reserva.datos.correo, name: reserva.datos.nombre }],
+              subject: 'Recordatorio: tu taxi llega en 1 hora',
+              htmlContent: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f9f9f9;max-width:600px;margin:0 auto;">
+                <h2 style="color:#f5c400;background:#1a1a1a;padding:16px;border-radius:8px;">🚖 Reserva Taxi Las Palmas</h2>
+                <h3 style="color:#2d8a2d;">⏰ Tu taxi llega en 1 hora</h3>
+                <p>Hola <strong>${reserva.datos.nombre}</strong>, te recordamos tu recogida:</p>
+                <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:16px;margin:16px 0;">
+                  <p>🎫 <strong>Nº de reserva:</strong> ${numReserva(reserva.numero)}</p>
+                  ${reserva.conductorNombre ? `<p>🚖 <strong>Tu conductor:</strong> ${reserva.conductorNombre}</p>` : ''}
+                  <p>📅 <strong>Fecha:</strong> ${reserva.datos.fecha} a las ${reserva.datos.hora}</p>
+                  <p>📍 <strong>Origen:</strong> ${reserva.datos.origen}</p>
+                  <p>🏁 <strong>Destino:</strong> ${reserva.datos.destino}</p>
+                </div>
+                <p>📞 Consultas: <strong>828 810 938</strong></p>
+              </div>`
+            });
+          } catch (e) { console.error('Error recordatorio cliente:', e.message); }
+        }
+        reserva.recordatorioClienteEnviado = true;
+        await reserva.save();
+      }
+
+      // 3) Aviso al ADMIN si una reserva lleva 10 min PENDIENTE sin que nadie la acepte
+      const hace10min = new Date(Date.now() - 10 * 60 * 1000);
+      const sinAceptar = await Reserva.find({ estado: 'pendiente', avisoSinAceptarEnviado: false, fechaCreacion: { $lte: hace10min } });
+      for (const reserva of sinAceptar) {
+        bot.sendMessage(OWNER_CHAT_ID, `⚠️ *Reserva sin aceptar* — ${numReserva(reserva.numero)}\n\nLleva más de 10 minutos pendiente y ningún taxista la ha aceptado.\n\n${formatearReserva(reserva.datos, true)}\n\n🆔 \`${reserva._id}\``, { parse_mode: 'Markdown' });
+        // Reenviar a los taxistas para que vuelva a sonar
+        try { await repartirReservaAConductores(reserva); } catch (e) {}
+        reserva.avisoSinAceptarEnviado = true;
         await reserva.save();
       }
     } catch (err) { console.error('Error recordatorios:', err); }
@@ -688,6 +801,12 @@ function iniciarRecordatorios() {
 }
 
 // =================== HELPERS ===================
+
+// Formatea el número corto de reserva: 42 -> RT-0042
+function numReserva(numero) {
+  if (!numero) return '';
+  return 'RT-' + String(numero).padStart(4, '0');
+}
 
 function formatearReserva(data, paraAdmin = false) {
   let msg = `👤 *Nombre:* ${data.nombre}\n`;
@@ -728,14 +847,16 @@ app.post('/reserva', async (req, res) => {
       return res.json({ ok: true });
     }
 
-    const reserva = await Reserva.create({ datos: data, clienteChatId: clienteChatId || null, fechaServicio });
+    const numero = await siguienteNumeroReserva();
+    const reserva = await Reserva.create({ numero, datos: data, clienteChatId: clienteChatId || null, fechaServicio });
     const mensajesEnviados = [];
-    const texto = `🚖 *NUEVA RESERVA DISPONIBLE*\n\n${formatearReserva(data, false)}\n⏰ Responde rápido para aceptarla.`;
+    const texto = `🚖 *NUEVA RESERVA DISPONIBLE* — ${numReserva(numero)}\n\n${formatearReserva(data, false)}\n⏰ Responde rápido para aceptarla.`;
 
     for (const conductor of conductores) {
       try {
         const msg = await bot.sendMessage(conductor.chatId, texto, {
           parse_mode: 'Markdown',
+          disable_notification: false,
           reply_markup: { inline_keyboard: [[
             { text: '✅ Aceptar', callback_data: `aceptar_${reserva._id}` },
             { text: '❌ Rechazar', callback_data: `rechazar_${reserva._id}` }
