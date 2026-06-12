@@ -4,116 +4,165 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Reserva Taxi Las Palmas de Gran Canaria</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Archivo:wght@600;700;800;900&display=swap" rel="stylesheet">
   <style>
+    :root {
+      --amarillo: #f5c400;
+      --amarillo-claro: #ffd633;
+      --negro: #0c0c0d;
+      --panel: #161618;
+      --panel-claro: #1e1e21;
+      --borde: #2c2c30;
+      --texto: #f2f2f3;
+      --texto-suave: #9a9aa0;
+      --verde: #34c759;
+      --rojo: #ff4d4d;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      background: #0a0a0a;
-      color: #f0f0f0;
+      font-family: 'Inter', system-ui, sans-serif;
+      background:
+        radial-gradient(1200px 500px at 50% -10%, #1c1c1f 0%, transparent 70%),
+        var(--negro);
+      color: var(--texto);
       min-height: 100vh;
-      padding-bottom: 40px;
+      padding-bottom: 48px;
+      -webkit-font-smoothing: antialiased;
     }
 
+    /* ===== CABECERA ===== */
     header {
-      background: linear-gradient(135deg, #1a1a1a 0%, #111 100%);
-      border-bottom: 3px solid #f5c400;
-      padding: 20px;
+      position: relative;
       text-align: center;
+      padding: 32px 20px 28px;
+      background: linear-gradient(180deg, #161618 0%, #0c0c0d 100%);
+      border-bottom: 1px solid var(--borde);
+      overflow: hidden;
+    }
+    header::after {
+      content: "";
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 3px;
+      background: repeating-linear-gradient(90deg, var(--amarillo) 0 14px, #0c0c0d 14px 28px);
+      opacity: 0.9;
     }
 
-    header .logo-area {
+    .logo {
+      width: 150px;
+      height: auto;
+      margin: 0 auto 6px;
+      display: block;
+      filter: drop-shadow(0 6px 18px rgba(0,0,0,0.5));
+    }
+
+    header .tagline {
+      font-size: 13px;
+      color: var(--texto-suave);
+      margin-top: 10px;
+      letter-spacing: 0.2px;
+    }
+    header .tagline b { color: var(--amarillo); font-weight: 600; }
+
+    /* ===== CONTENEDOR ===== */
+    .form-container {
+      max-width: 540px;
+      margin: 0 auto;
+      padding: 24px 18px;
+    }
+
+    .info-bar {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 12px;
-      margin-bottom: 6px;
+      gap: 8px;
+      background: var(--panel);
+      border: 1px solid var(--borde);
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-bottom: 22px;
+      font-size: 14px;
+      color: var(--texto-suave);
     }
-
-    header .taxi-icon { font-size: 32px; }
-
-    header h1 {
-      font-size: 18px;
-      font-weight: 800;
-      color: #f5c400;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-      line-height: 1.2;
-    }
-
-    header p {
-      font-size: 13px;
-      color: #aaa;
-      margin-top: 4px;
-    }
-
-    .form-container {
-      max-width: 520px;
-      margin: 0 auto;
-      padding: 24px 16px;
-    }
-
-    .section-label {
-      font-size: 11px;
+    .info-bar a {
+      color: var(--amarillo);
+      text-decoration: none;
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1.2px;
-      color: #f5c400;
-      margin: 24px 0 12px;
-      padding-left: 2px;
-      border-left: 3px solid #f5c400;
-      padding-left: 8px;
+      font-size: 15px;
     }
 
-    .field {
-      margin-bottom: 14px;
+    /* ===== SECCIONES ===== */
+    .section-label {
+      font-family: 'Archivo', sans-serif;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--amarillo);
+      margin: 26px 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
+    .section-label::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, var(--borde), transparent);
+    }
+
+    .field { margin-bottom: 16px; }
 
     label {
       display: block;
       font-size: 13px;
-      color: #bbb;
-      margin-bottom: 5px;
+      color: var(--texto-suave);
+      margin-bottom: 7px;
       font-weight: 500;
     }
 
     input, select, textarea {
       width: 100%;
-      padding: 13px 14px;
-      background: #1c1c1c;
-      border: 1px solid #333;
-      border-radius: 10px;
-      color: #f0f0f0;
+      padding: 14px 15px;
+      background: var(--panel);
+      border: 1px solid var(--borde);
+      border-radius: 12px;
+      color: var(--texto);
       font-size: 15px;
-      transition: border-color 0.2s;
+      font-family: inherit;
+      transition: border-color 0.18s, background 0.18s, box-shadow 0.18s;
       -webkit-appearance: none;
     }
 
     input:focus, select:focus, textarea:focus {
       outline: none;
-      border-color: #f5c400;
-      background: #222;
+      border-color: var(--amarillo);
+      background: var(--panel-claro);
+      box-shadow: 0 0 0 3px rgba(245,196,0,0.12);
     }
 
-    input::placeholder, textarea::placeholder { color: #555; }
-    select option { background: #1c1c1c; color: #f0f0f0; }
-    textarea { resize: none; height: 85px; }
+    input::placeholder, textarea::placeholder { color: #5a5a60; }
+    select option { background: var(--panel); color: var(--texto); }
+    textarea { resize: none; height: 88px; }
 
     .airport-fields {
       display: none;
-      background: #141414;
-      border: 1px solid #2a2a1a;
+      background: var(--panel);
+      border: 1px solid #38381f;
+      border-left: 3px solid var(--amarillo);
       border-radius: 12px;
-      padding: 14px;
-      margin-top: 10px;
+      padding: 16px;
+      margin-top: 12px;
     }
-
     .airport-fields.visible { display: block; }
-
     .airport-tag {
-      font-size: 12px;
-      color: #f5c400;
-      margin-bottom: 12px;
+      font-size: 13px;
+      color: var(--amarillo);
+      margin-bottom: 14px;
       font-weight: 600;
     }
 
@@ -123,109 +172,135 @@
       gap: 12px;
     }
 
+    /* ===== CAJA DE TARIFA ===== */
     .tarifa-box {
       display: none;
-      background: #111;
-      border: 1px solid #f5c400;
-      border-radius: 12px;
-      padding: 16px;
+      position: relative;
+      background: linear-gradient(135deg, #1a1a13 0%, #161618 100%);
+      border: 1px solid #3a3422;
+      border-radius: 16px;
+      padding: 20px;
+      margin-top: 14px;
+      overflow: hidden;
+    }
+    .tarifa-box.visible { display: block; animation: aparece 0.3s ease; }
+    @keyframes aparece { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .tarifa-box::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; bottom: 0;
+      width: 4px;
+      background: var(--amarillo);
+    }
+    .tarifa-titulo {
+      font-size: 12px;
+      color: var(--texto-suave);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+    .tarifa-precio {
+      font-family: 'Archivo', sans-serif;
+      font-size: 38px;
+      font-weight: 900;
+      color: var(--amarillo);
+      line-height: 1;
+    }
+    .tarifa-detalle { font-size: 13px; color: var(--texto-suave); margin-top: 8px; }
+    .tarifa-tipo {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 20px;
       margin-top: 10px;
     }
+    .tarifa-diurna { background: #2a2200; color: var(--amarillo); }
+    .tarifa-nocturna { background: #15152a; color: #8f8fff; }
+    .tarifa-festiva { background: #2a0e0e; color: #ff7a7a; }
+    .calculando { font-size: 13px; color: var(--texto-suave); margin-top: 10px; }
 
-    .tarifa-box.visible { display: block; }
-    .tarifa-titulo { font-size: 12px; color: #aaa; margin-bottom: 6px; }
-    .tarifa-precio { font-size: 30px; font-weight: 800; color: #f5c400; }
-    .tarifa-detalle { font-size: 12px; color: #777; margin-top: 6px; }
-    .tarifa-tipo { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 20px; margin-top: 6px; }
-    .tarifa-diurna { background: #2a2200; color: #f5c400; }
-    .tarifa-nocturna { background: #1a1a2e; color: #8080ff; }
-    .tarifa-festiva { background: #2a0000; color: #ff6060; }
-    .calculando { font-size: 13px; color: #888; margin-top: 8px; }
-
+    /* ===== BOTÓN ===== */
     .btn-enviar {
       width: 100%;
-      padding: 16px;
-      background: #f5c400;
-      color: #0a0a0a;
+      padding: 17px;
+      background: linear-gradient(180deg, var(--amarillo-claro), var(--amarillo));
+      color: #1a1500;
       border: none;
-      border-radius: 12px;
+      border-radius: 14px;
+      font-family: 'Archivo', sans-serif;
       font-size: 17px;
       font-weight: 800;
-      cursor: pointer;
-      margin-top: 24px;
-      transition: opacity 0.2s, transform 0.1s;
       letter-spacing: 0.3px;
+      cursor: pointer;
+      margin-top: 26px;
+      transition: transform 0.1s, box-shadow 0.2s, opacity 0.2s;
+      box-shadow: 0 8px 24px rgba(245,196,0,0.25);
     }
+    .btn-enviar:hover { box-shadow: 0 10px 30px rgba(245,196,0,0.35); }
+    .btn-enviar:active { transform: scale(0.985); }
+    .btn-enviar:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
 
-    .btn-enviar:active { transform: scale(0.98); opacity: 0.9; }
-    .btn-enviar:disabled { opacity: 0.5; cursor: not-allowed; }
+    .error-msg { font-size: 12px; color: #ff7a7a; margin-top: 5px; display: none; }
+    input.invalid, select.invalid { border-color: var(--rojo); }
 
-    .error-msg { font-size: 12px; color: #e07070; margin-top: 4px; display: none; }
-    input.invalid, select.invalid { border-color: #e07070; }
-
+    /* ===== CAJAS DE RESULTADO ===== */
+    .success-box, .rechazo-box {
+      display: none;
+      border-radius: 18px;
+      padding: 32px 24px;
+      text-align: center;
+      margin-top: 20px;
+    }
     .success-box {
-      display: none;
-      background: #1e3a1e;
-      border: 1px solid #2d6a2d;
-      border-radius: 12px;
-      padding: 24px;
-      text-align: center;
-      margin-top: 20px;
+      background: linear-gradient(135deg, #12241a 0%, #0e1a13 100%);
+      border: 1px solid #2a5a3a;
     }
-
-    .success-box .check { font-size: 48px; margin-bottom: 12px; }
-    .success-box h2 { color: #7dd87d; font-size: 20px; margin-bottom: 8px; }
-    .success-box p { color: #aaa; font-size: 14px; line-height: 1.5; }
-
     .rechazo-box {
-      display: none;
-      background: #3a2a1e;
-      border: 1px solid #6a4d2d;
-      border-radius: 12px;
-      padding: 24px;
-      text-align: center;
-      margin-top: 20px;
+      background: linear-gradient(135deg, #2a2113 0%, #1a160e 100%);
+      border: 1px solid #5a4a2a;
     }
-
-    .rechazo-box .check { font-size: 48px; margin-bottom: 12px; }
-    .rechazo-box h2 { color: #f5c400; font-size: 20px; margin-bottom: 8px; }
-    .rechazo-box p { color: #ccc; font-size: 14px; line-height: 1.5; margin-bottom: 16px; }
+    .success-box .check, .rechazo-box .check { font-size: 52px; margin-bottom: 14px; }
+    .success-box h2 { color: #6fe09a; font-size: 21px; margin-bottom: 10px; font-family: 'Archivo', sans-serif; }
+    .rechazo-box h2 { color: var(--amarillo); font-size: 21px; margin-bottom: 10px; font-family: 'Archivo', sans-serif; }
+    .success-box p, .rechazo-box p { color: var(--texto-suave); font-size: 14px; line-height: 1.6; }
+    .success-box a { color: var(--amarillo); text-decoration: none; font-weight: 700; }
 
     .btn-volver {
-      padding: 12px 24px;
-      background: #f5c400;
-      color: #0a0a0a;
+      margin-top: 18px;
+      padding: 13px 26px;
+      background: var(--amarillo);
+      color: #1a1500;
       border: none;
-      border-radius: 10px;
+      border-radius: 12px;
       font-size: 15px;
       font-weight: 700;
       cursor: pointer;
     }
 
-    .info-bar {
-      background: #111;
-      border: 1px solid #222;
-      border-radius: 10px;
-      padding: 12px 16px;
-      margin-bottom: 4px;
-      font-size: 13px;
-      color: #888;
+    /* ===== PIE ===== */
+    .pie {
       text-align: center;
+      margin-top: 32px;
+      padding-top: 22px;
+      border-top: 1px solid var(--borde);
+      font-size: 12px;
+      color: #5a5a60;
+      line-height: 1.7;
     }
+    .pie a { color: var(--texto-suave); text-decoration: none; }
 
-    .info-bar a { color: #f5c400; text-decoration: none; }
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; transition: none !important; }
+    }
   </style>
 </head>
 <body>
 
 <header>
-  <div class="logo-area">
-    <span class="taxi-icon">🚖</span>
-    <h1>Reserva Taxi<br>Las Palmas de Gran Canaria</h1>
-  </div>
-  <p>Reserva tu taxi con antelación mínima de 2 horas</p>
+  <img src="/logo.jpg" alt="Reserva Taxi Las Palmas de Gran Canaria" class="logo" />
+  <p class="tagline">Transfers y traslados con reserva previa · <b>mínimo 2 horas de antelación</b></p>
 </header>
-
 <div class="form-container">
 
   <div class="info-bar">
@@ -337,6 +412,12 @@
     <button class="btn-volver" onclick="volverFormulario()">Volver a intentar</button>
   </div>
 
+  <div class="pie">
+    Reserva Taxi Las Palmas de Gran Canaria<br>
+    <a href="tel:+34828810938">828 810 938</a> · <a href="mailto:reservas@taxilaspalmasdegrancanaria.com">reservas@taxilaspalmasdegrancanaria.com</a><br>
+    Servicio de transfers con reserva previa
+  </div>
+
 </div>
 
 <script>
@@ -397,6 +478,8 @@
     }
   }
 
+  var ultimoCalculo = '';
+
   function calcularTarifa() {
     const origen = document.getElementById('origen').value.trim();
     const destino = document.getElementById('destino').value.trim();
@@ -404,6 +487,15 @@
     const hora = document.getElementById('hora').value;
     if (!origen || !destino || !fecha || !hora) return;
     if (origen.length < 5 || destino.length < 5) return;
+
+    // Ahorro de API: solo calcular cuando se han elegido AMBAS direcciones del
+    // autocompletar (tenemos coordenadas exactas). Si el cliente escribe a mano,
+    // no llamamos a Google hasta que elija de la lista.
+    if (!origenCoords || !destinoCoords) return;
+
+    // Ahorro de API: si nada ha cambiado desde el último cálculo, no repetir la llamada.
+    const firma = origenCoords + '|' + destinoCoords + '|' + fecha + '|' + hora;
+    if (firma === ultimoCalculo) return;
 
     clearTimeout(calculandoTimer);
     calculandoTimer = setTimeout(async () => {
@@ -417,6 +509,7 @@
         });
         const data = await res.json();
         if (data.ok) {
+          ultimoCalculo = firma;
           tarifaCalculada = data;
           document.getElementById('tarifa-precio').textContent = data.precio + ' €';
           document.getElementById('tarifa-detalle').textContent = `${data.distanciaKm} km · Base ${data.precioBase}€ + ${data.km}€/km` + (data.suplementoAeropuerto ? ' + 2,10€ aeropuerto' : '');
@@ -428,7 +521,7 @@
         }
       } catch (e) { console.error(e); }
       document.getElementById('calculando').style.display = 'none';
-    }, 1000);
+    }, 1500);
   }
 
   function validar() {
