@@ -10,7 +10,10 @@ const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID || '898842399';
 const MONGODB_URI = process.env.MONGODB_URI;
 const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_KEY;
 const COMISION_PORCENTAJE = 10;
-const MINIMO_HORAS_ANTELACION = 2;
+const MINIMO_HORAS_ANTELACION = 2; // valor inicial; el real se gestiona en cacheConfig.antelacion
+
+// Configuración ajustable en memoria (se rellena desde la BD al arrancar)
+let cacheConfig = { antelacion: 2, cancelacion: 0.5 };
 
 if (!TOKEN) {
   console.error('ERROR: Falta la variable BOT_TOKEN en Railway.');
@@ -29,7 +32,7 @@ function cumpleAntelacion(fecha, hora) {
     const fechaReserva = new Date(`${fecha}T${hora}:00`);
     if (isNaN(fechaReserva)) return false;
     const minutos = (fechaReserva - ahoraCanarias()) / 60000;
-    return minutos >= MINIMO_HORAS_ANTELACION * 60;
+    return minutos >= cacheConfig.antelacion * 60;
   } catch (e) {
     return false;
   }
@@ -159,6 +162,40 @@ async function siguienteNumeroReserva() {
   return c.valor;
 }
 
+// =================== CONFIGURACIÓN AJUSTABLE ===================
+// Guarda valores que el admin puede cambiar desde el bot (se mantienen tras reinicios).
+const configSchema = new mongoose.Schema({
+  nombre: { type: String, unique: true },
+  valor: Number
+});
+const Config = mongoose.model('Config', configSchema);
+
+// Valores por defecto (en horas)
+const ANTELACION_DEFECTO = 2;        // antelación mínima para reservar
+const CANCELACION_DEFECTO = 0.5;     // margen para cancelar online (0.5 h = 30 min)
+
+async function cargarConfig() {
+  try {
+    const ant = await Config.findOne({ nombre: 'antelacion' });
+    const can = await Config.findOne({ nombre: 'cancelacion' });
+    cacheConfig.antelacion = ant ? ant.valor : ANTELACION_DEFECTO;
+    cacheConfig.cancelacion = can ? can.valor : CANCELACION_DEFECTO;
+  } catch (e) { console.error('Error cargando config:', e.message); }
+}
+
+async function guardarConfig(nombre, valor) {
+  await Config.findOneAndUpdate({ nombre }, { valor }, { upsert: true });
+  cacheConfig[nombre] = valor;
+}
+
+// Convierte horas a texto legible: 2 -> "2 horas", 0.5 -> "30 minutos", 1 -> "1 hora"
+function horasATexto(horas) {
+  if (horas < 1) return `${Math.round(horas * 60)} minutos`;
+  if (horas === 1) return `1 hora`;
+  return `${horas} horas`;
+}
+
+
 const festivoSchema = new mongoose.Schema({
   fecha: { type: String, unique: true },
   descripcion: String,
@@ -183,6 +220,7 @@ const Comision = mongoose.model('Comision', comisionSchema);
 
 mongoose.connect(MONGODB_URI).then(async () => {
   console.log('MongoDB conectado');
+  await cargarConfig();
   await cargarFestivosIniciales();
   iniciarRecordatorios();
   iniciarResumenMensual();
@@ -354,7 +392,7 @@ app.post('/calcular-tarifa', async (req, res) => {
   if (!cumpleAntelacion(fecha, hora)) {
     return res.json({
       ok: false,
-      error: `No realizamos servicios inmediatos. Las reservas requieren un mínimo de ${MINIMO_HORAS_ANTELACION} horas de antelación. Consultas: 828 810 938.`
+      error: `No realizamos servicios inmediatos. Las reservas requieren un mínimo de ${horasATexto(cacheConfig.antelacion)} de antelación. Consultas: 828 810 938.`
     });
   }
   try {
@@ -453,7 +491,7 @@ bot.onText(/\/start/, async (msg) => {
   const nombre = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
   if (chatId === OWNER_CHAT_ID) {
     bot.sendMessage(chatId,
-      '🚖 *Panel de Administración*\n\n📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n🚫 /cancelarreserva ID\n🔄 /reasignar ID\n\n👥 /conductores\n🔴 /desactivar Nombre\n🟢 /activar Nombre\n🗑️ /eliminarconductor Nombre\n📊 /resumen\n\n💰 *Comisiones:*\n/deudas\n/pagado NombreConductor\n\n📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
+      '🚖 *Panel de Administración*\n\n📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n🚫 /cancelarreserva ID\n🔄 /reasignar ID\n\n👥 /conductores\n🔴 /desactivar Nombre\n🟢 /activar Nombre\n🗑️ /eliminarconductor Nombre\n📊 /resumen\n\n⚙️ *Configuración:*\n/config\n/antelacion HORAS\n/cancelacion MINUTOS\n\n💰 *Comisiones:*\n/deudas\n/pagado NombreConductor\n\n📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
       { parse_mode: 'Markdown' }
     );
     return;
@@ -505,6 +543,35 @@ bot.onText(/\/pagado (.+)/, async (msg, match) => {
   const result = await Comision.updateMany({ conductorChatId: conductor.chatId, pagada: false }, { pagada: true });
   bot.sendMessage(OWNER_CHAT_ID, `✅ ${result.modifiedCount} comisiones pagadas para *${conductor.nombre}*`, { parse_mode: 'Markdown' });
   try { bot.sendMessage(conductor.chatId, `✅ *Tu deuda ha sido liquidada.* Gracias por el pago. 🙏`, { parse_mode: 'Markdown' }); } catch (e) {}
+});
+
+bot.onText(/\/config/, async (msg) => {
+  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
+  bot.sendMessage(OWNER_CHAT_ID,
+    `⚙️ *Configuración actual*\n\n⏱️ Antelación mínima para reservar: *${horasATexto(cacheConfig.antelacion)}*\n❌ Margen para cancelar online: *${horasATexto(cacheConfig.cancelacion)}*\n\n*Para cambiarlas:*\n/antelacion 2 → 2 horas\n/antelacion 1 → 1 hora\n/antelacion 0.5 → 30 minutos\n\n/cancelacion 30 → 30 minutos\n/cancelacion 60 → 1 hora\n/cancelacion 15 → 15 minutos`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
+bot.onText(/\/antelacion (.+)/, async (msg, match) => {
+  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
+  const valor = parseFloat(match[1].trim().replace(',', '.'));
+  if (isNaN(valor) || valor < 0 || valor > 72) {
+    return bot.sendMessage(OWNER_CHAT_ID, `❌ Valor no válido. Ejemplos:\n/antelacion 2 (2 horas)\n/antelacion 0.5 (30 minutos)`);
+  }
+  await guardarConfig('antelacion', valor);
+  bot.sendMessage(OWNER_CHAT_ID, `✅ Antelación mínima para reservar cambiada a *${horasATexto(valor)}*.\n\nLas nuevas reservas ya usan este valor.`, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/cancelacion (.+)/, async (msg, match) => {
+  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
+  const minutos = parseFloat(match[1].trim().replace(',', '.'));
+  if (isNaN(minutos) || minutos < 0 || minutos > 1440) {
+    return bot.sendMessage(OWNER_CHAT_ID, `❌ Valor no válido. Indica los MINUTOS. Ejemplos:\n/cancelacion 30 (30 minutos)\n/cancelacion 60 (1 hora)`);
+  }
+  const horas = minutos / 60;
+  await guardarConfig('cancelacion', horas);
+  bot.sendMessage(OWNER_CHAT_ID, `✅ Margen para cancelar online cambiado a *${horasATexto(horas)}*.\n\nLos clientes podrán cancelar online hasta ${horasATexto(horas)} antes del servicio.`, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/festivos/, async (msg) => {
@@ -612,7 +679,8 @@ bot.onText(/\/reasignar (.+)/, async (msg, match) => {
 
     reserva.estado = 'pendiente';
     reserva.conductorAsignado = null;
-    reserva.mensajesEnviados = [];
+    // No vaciamos mensajesEnviados: así los mensajes anteriores también se
+    // actualizarán a "Servicio ya asignado" cuando alguien acepte.
     await reserva.save();
 
     const numConductores = await repartirReservaAConductores(reserva);
@@ -706,7 +774,9 @@ bot.onText(/\/cancelar/, async (msg) => {
 // Reparte una reserva (ya existente y en estado pendiente) a todos los conductores activos.
 async function repartirReservaAConductores(reserva) {
   const conductores = await Conductor.find({ activo: true });
-  const mensajesEnviados = [];
+  // Acumular sobre los mensajes que ya hubiera (de reenvíos anteriores), no reemplazar.
+  // Así, al aceptar, se actualizan TODOS los mensajes (de todos los reenvíos) a "ya asignado".
+  const mensajesEnviados = Array.isArray(reserva.mensajesEnviados) ? [...reserva.mensajesEnviados] : [];
   const texto = `🚖 *NUEVA RESERVA DISPONIBLE* — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, 'disponible')}\n⏰ Responde rápido para aceptarla.`;
   for (const conductor of conductores) {
     try {
@@ -755,10 +825,12 @@ bot.on('callback_query', async (query) => {
       });
       bot.sendMessage(OWNER_CHAT_ID, `✅ Reserva asignada — ${numReserva(reserva.numero)}\n\nConductor: ${nombreConductor}\n\n${formatearReserva(reserva.datos, true)}`);
 
+      // Actualizar TODOS los demás mensajes de esta reserva (de todos los reenvíos,
+      // de cualquier taxista) a "Servicio ya asignado". Solo se salta el mensaje
+      // concreto que el taxista acaba de pulsar (ese ya se editó arriba).
       for (const msg of reserva.mensajesEnviados) {
-        if (msg.chatId !== chatId) {
-          try { bot.editMessageText(`⚠️ *Servicio ya asignado*`, { chat_id: msg.chatId, message_id: msg.messageId, parse_mode: 'Markdown' }); } catch (e) {}
-        }
+        if (String(msg.messageId) === String(messageId) && msg.chatId === chatId) continue;
+        try { bot.editMessageText(`⚠️ *Servicio ya asignado*`, { chat_id: msg.chatId, message_id: msg.messageId, parse_mode: 'Markdown' }); } catch (e) {}
       }
 
       if (reserva.clienteChatId) {
@@ -972,7 +1044,7 @@ app.post('/reserva', async (req, res) => {
   if (!cumpleAntelacion(data.fecha, data.hora)) {
     return res.json({
       ok: false,
-      error: `No realizamos servicios inmediatos. Las reservas requieren un mínimo de ${MINIMO_HORAS_ANTELACION} horas de antelación. Consultas: 828 810 938.`
+      error: `No realizamos servicios inmediatos. Las reservas requieren un mínimo de ${horasATexto(cacheConfig.antelacion)} de antelación. Consultas: 828 810 938.`
     });
   }
 
@@ -1042,11 +1114,11 @@ app.get('/cancelar', async (req, res) => {
     if (reserva.estado === 'cancelada') {
       return res.send(html('<div class="icon">✅</div>', '<h1>Ya estaba cancelada</h1><p>Esta reserva ya figura como cancelada. No tienes que hacer nada más.</p>', '#7dd87d'));
     }
-    // No permitir cancelar con menos de 2 horas de antelación
+    // No permitir cancelar online con menos del margen de cancelación configurado
     if (reserva.fechaServicio) {
       const minutos = (new Date(reserva.fechaServicio) - ahoraCanarias()) / 60000;
-      if (minutos < MINIMO_HORAS_ANTELACION * 60) {
-        return res.send(html('<div class="icon">⏱️</div>', `<h1>No se puede cancelar online</h1><p>Tu servicio es en menos de 2 horas. Para cancelarlo, llama directamente al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>`, '#f5c400'));
+      if (minutos < cacheConfig.cancelacion * 60) {
+        return res.send(html('<div class="icon">⏱️</div>', `<h1>No se puede cancelar online</h1><p>Tu servicio es en menos de ${horasATexto(cacheConfig.cancelacion)}. Para cancelarlo, llama directamente al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>`, '#f5c400'));
       }
     }
     const d = reserva.datos;
@@ -1074,8 +1146,8 @@ app.get('/cancelar-confirmar', async (req, res) => {
     if (reserva.estado === 'cancelada') return res.send(html('<div class="icon">✅</div>', '<h1>Ya estaba cancelada</h1><p>No tienes que hacer nada más.</p>', '#7dd87d'));
     if (reserva.fechaServicio) {
       const minutos = (new Date(reserva.fechaServicio) - ahoraCanarias()) / 60000;
-      if (minutos < MINIMO_HORAS_ANTELACION * 60) {
-        return res.send(html('<div class="icon">⏱️</div>', `<h1>No se puede cancelar online</h1><p>Tu servicio es en menos de 2 horas. Llama al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>`, '#f5c400'));
+      if (minutos < cacheConfig.cancelacion * 60) {
+        return res.send(html('<div class="icon">⏱️</div>', `<h1>No se puede cancelar online</h1><p>Tu servicio es en menos de ${horasATexto(cacheConfig.cancelacion)}. Llama al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>`, '#f5c400'));
       }
     }
     reserva.estado = 'cancelada';
