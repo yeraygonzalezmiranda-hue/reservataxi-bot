@@ -235,6 +235,79 @@ async function determinarTarifa(fecha, hora) {
   return 'nocturna';
 }
 
+// Los 21 municipios de Gran Canaria (para detección por texto)
+const MUNICIPIOS_GC = [
+  'Agaete', 'Agüimes', 'Artenara', 'Arucas', 'Firgas', 'Gáldar',
+  'Ingenio', 'Mogán', 'Moya', 'Las Palmas de Gran Canaria', 'San Bartolomé de Tirajana',
+  'La Aldea de San Nicolás', 'Santa Brígida', 'Santa Lucía de Tirajana', 'Santa María de Guía',
+  'Tejeda', 'Telde', 'Teror', 'Valleseco', 'Valsequillo', 'Vega de San Mateo'
+];
+
+// Zonas turísticas conocidas y su municipio real
+const ZONAS_MUNICIPIO = {
+  'maspalomas': 'San Bartolomé de Tirajana',
+  'playa del ingles': 'San Bartolomé de Tirajana',
+  'playa del inglés': 'San Bartolomé de Tirajana',
+  'san agustin': 'San Bartolomé de Tirajana',
+  'meloneras': 'San Bartolomé de Tirajana',
+  'puerto rico': 'Mogán',
+  'puerto de mogan': 'Mogán',
+  'arguineguin': 'Mogán',
+  'vecindario': 'Santa Lucía de Tirajana',
+  'el doctoral': 'Santa Lucía de Tirajana',
+  'jinamar': 'Telde',
+  'jinámar': 'Telde'
+};
+
+// Detecta el municipio de recogida. Usa Google si hay coordenadas; si no, el texto.
+async function detectarMunicipio(origenTexto, origenCoords) {
+  // Aeropuerto: caso especial, se trata aparte
+  const t = (origenTexto || '').toLowerCase();
+  if (t.includes('aeropuerto') || t.includes('airport') || t.includes('lpa') || t.includes('gando')) {
+    return 'AEROPUERTO';
+  }
+  // 1) Con coordenadas exactas: preguntar a Google (geocodificación inversa)
+  if (origenCoords && GOOGLE_MAPS_KEY) {
+    try {
+      const municipio = await municipioDesdeCoords(origenCoords);
+      if (municipio) return municipio;
+    } catch (e) { console.error('Error municipio coords:', e.message); }
+  }
+  // 2) Sin coordenadas: buscar por texto (zonas turísticas primero, luego municipios)
+  for (const zona in ZONAS_MUNICIPIO) {
+    if (t.includes(zona)) return ZONAS_MUNICIPIO[zona];
+  }
+  for (const m of MUNICIPIOS_GC) {
+    if (t.includes(m.toLowerCase())) return m;
+  }
+  return null; // No se pudo determinar
+}
+
+function municipioDesdeCoords(coords) {
+  return new Promise((resolve, reject) => {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(coords)}&key=${GOOGLE_MAPS_KEY}&language=es&result_type=locality|administrative_area_level_3`;
+    https.get(url, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.status === 'OK' && json.results.length > 0) {
+            for (const result of json.results) {
+              for (const comp of result.address_components) {
+                if (comp.types.includes('locality') || comp.types.includes('administrative_area_level_3')) {
+                  return resolve(comp.long_name);
+                }
+              }
+            }
+          }
+          resolve(null);
+        } catch (e) { reject(e); }
+      });
+    }).on('error', reject);
+  });
+}
+
 async function calcularDistanciaKm(origen, destino, origenCoords, destinoCoords) {
   return new Promise((resolve, reject) => {
     // Si hay coordenadas exactas (elegidas del autocompletar), se usan tal cual.
@@ -616,7 +689,7 @@ bot.onText(/\/cancelar/, async (msg) => {
 async function repartirReservaAConductores(reserva) {
   const conductores = await Conductor.find({ activo: true });
   const mensajesEnviados = [];
-  const texto = `🚖 *NUEVA RESERVA DISPONIBLE*\n\n${formatearReserva(reserva.datos, false)}\n⏰ Responde rápido para aceptarla.`;
+  const texto = `🚖 *NUEVA RESERVA DISPONIBLE* — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, 'disponible')}\n⏰ Responde rápido para aceptarla.`;
   for (const conductor of conductores) {
     try {
       const msg = await bot.sendMessage(conductor.chatId, texto, {
@@ -808,9 +881,37 @@ function numReserva(numero) {
   return 'RT-' + String(numero).padStart(4, '0');
 }
 
-function formatearReserva(data, paraAdmin = false) {
-  let msg = `👤 *Nombre:* ${data.nombre}\n`;
-  if (paraAdmin) {
+// Línea de municipio (cabecera): 🏙️ Municipio: TELDE  o  ✈️ AEROPUERTO
+function lineaMunicipio(data) {
+  if (!data.municipio) return '';
+  if (data.municipio === 'AEROPUERTO') return `✈️ *AEROPUERTO*\n`;
+  return `🏙️ *Municipio:* ${data.municipio}\n`;
+}
+
+// nivel: 'disponible' (sin datos personales), 'taxista' (nombre sí, contacto no), 'admin' (todo)
+// Se mantiene compatibilidad: true => 'admin', false => 'taxista'
+function formatearReserva(data, nivel = 'taxista') {
+  if (nivel === true) nivel = 'admin';
+  if (nivel === false) nivel = 'taxista';
+
+  let msg = '';
+
+  if (nivel === 'disponible') {
+    // Reserva ofrecida a todos los taxistas: SIN datos personales del cliente
+    msg += lineaMunicipio(data);
+    msg += `\n📅 *Fecha:* ${data.fecha} a las ${data.hora}\n`;
+    msg += `📍 *Origen:* ${data.origen}\n`;
+    msg += `🏁 *Destino:* ${data.destino}\n`;
+    msg += `👥 *Pasajeros:* ${data.pasajeros}\n`;
+    if (data.precioEstimado) msg += `💰 *Precio estimado:* ${data.precioEstimado} €\n`;
+    return msg;
+  }
+
+  // Niveles 'taxista' y 'admin': llevan el nombre del cliente
+  msg += lineaMunicipio(data);
+  msg += `👤 *${nivel === 'admin' ? 'Nombre' : 'Cliente'}:* ${data.nombre}\n`;
+  if (nivel === 'admin') {
+    // Solo el admin ve el contacto del cliente
     msg += `📧 *Correo:* ${data.correo}\n`;
     msg += `📞 *Teléfono:* ${data.telefono}\n`;
   }
@@ -840,6 +941,11 @@ app.post('/reserva', async (req, res) => {
   let fechaServicio = null;
   try { fechaServicio = new Date(`${data.fecha}T${data.hora}:00`); } catch (e) {}
 
+  // Detectar el municipio del origen (o AEROPUERTO)
+  try {
+    data.municipio = await detectarMunicipio(data.origen, data.origenCoords);
+  } catch (e) { data.municipio = null; }
+
   try {
     const conductores = await Conductor.find({ activo: true });
     if (!conductores.length) {
@@ -850,7 +956,7 @@ app.post('/reserva', async (req, res) => {
     const numero = await siguienteNumeroReserva();
     const reserva = await Reserva.create({ numero, datos: data, clienteChatId: clienteChatId || null, fechaServicio });
     const mensajesEnviados = [];
-    const texto = `🚖 *NUEVA RESERVA DISPONIBLE* — ${numReserva(numero)}\n\n${formatearReserva(data, false)}\n⏰ Responde rápido para aceptarla.`;
+    const texto = `🚖 *NUEVA RESERVA DISPONIBLE* — ${numReserva(numero)}\n\n${formatearReserva(data, 'disponible')}\n⏰ Responde rápido para aceptarla.`;
 
     for (const conductor of conductores) {
       try {
