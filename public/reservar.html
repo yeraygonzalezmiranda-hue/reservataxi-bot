@@ -299,7 +299,7 @@
 
 <header>
   <img src="/logo.jpg" alt="Reserva Taxi Las Palmas de Gran Canaria" class="logo" />
-  <p class="tagline">Transfers y traslados con reserva previa · <b>mínimo 2 horas de antelación</b></p>
+  <p class="tagline">Transfers y traslados con reserva previa · <b>reserva con antelación</b></p>
 </header>
 <div class="form-container">
 
@@ -421,14 +421,32 @@
 </div>
 
 <script>
-  const now = new Date();
-  now.setHours(now.getHours() + 2);
-  document.getElementById('fecha').min = now.toISOString().split('T')[0];
-
   var tarifaCalculada = null;
   var calculandoTimer = null;
   var origenCoords = null;   // Coordenadas exactas del origen (si se elige del autocompletar)
   var destinoCoords = null;  // Coordenadas exactas del destino
+  var antelacionHoras = 2;   // Valor por defecto; se actualiza desde el servidor al cargar
+
+  // Cargar la configuración actual desde el servidor (antelación mínima que tienes
+  // puesta en el bot) y actualizar el texto y la fecha mínima del formulario.
+  async function cargarConfig() {
+    try {
+      const res = await fetch('/config-publica');
+      const cfg = await res.json();
+      if (cfg && cfg.antelacionHoras) {
+        antelacionHoras = cfg.antelacionHoras;
+        const tag = document.querySelector('header .tagline');
+        if (tag && cfg.antelacionTexto) {
+          tag.innerHTML = `Transfers y traslados con reserva previa · <b>mínimo ${cfg.antelacionTexto} de antelación</b>`;
+        }
+      }
+    } catch (e) { /* si falla, se queda con el valor por defecto */ }
+    // Ajustar la fecha mínima seleccionable según la antelación
+    const now = new Date();
+    now.setHours(now.getHours() + Math.ceil(antelacionHoras));
+    document.getElementById('fecha').min = now.toISOString().split('T')[0];
+  }
+  cargarConfig();
 
   // Autocompletar de Google, limitado a Gran Canaria
   function initAutocomplete() {
@@ -558,12 +576,13 @@
   async function enviarReserva() {
     if (!validar()) return;
 
-    // Comprobación de 2 horas de antelación (hora de Canarias)
+    // Comprobación de antelación mínima (hora de Canarias), usando el valor configurado
     const fechaHora = new Date(document.getElementById('fecha').value + 'T' + document.getElementById('hora').value + ':00');
     const ahoraCanarias = new Date(new Date().toLocaleString('en-US', { timeZone: 'Atlantic/Canary' }));
     const minutosMargen = (fechaHora - ahoraCanarias) / 60000;
-    if (minutosMargen < 120) {
-      document.getElementById('rechazo-texto').textContent = 'No realizamos servicios inmediatos. Las reservas requieren un mínimo de 2 horas de antelación. Consultas: 828 810 938.';
+    if (minutosMargen < antelacionHoras * 60) {
+      const txtAntelacion = antelacionHoras === 1 ? '1 hora' : (antelacionHoras < 1 ? (antelacionHoras * 60) + ' minutos' : antelacionHoras + ' horas');
+      document.getElementById('rechazo-texto').textContent = `No realizamos servicios inmediatos. Las reservas requieren un mínimo de ${txtAntelacion} de antelación. Consultas: 828 810 938.`;
       document.getElementById('formulario').style.display = 'none';
       document.getElementById('rechazo-box').style.display = 'block';
       window.scrollTo(0, 0);
