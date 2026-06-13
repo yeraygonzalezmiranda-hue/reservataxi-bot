@@ -34,12 +34,12 @@
     :root {
       --amarillo: #f5c400;
       --amarillo-claro: #ffd633;
-      --negro: #0c0c0d;
-      --panel: #161618;
-      --panel-claro: #1e1e21;
-      --borde: #2c2c30;
-      --texto: #f2f2f3;
-      --texto-suave: #9a9aa0;
+      --negro: #0e0f13;
+      --panel: #1a1c22;
+      --panel-claro: #232631;
+      --borde: #313542;
+      --texto: #f4f5f7;
+      --texto-suave: #a4a8b4;
       --verde: #34c759;
       --rojo: #ff4d4d;
     }
@@ -49,8 +49,10 @@
     body {
       font-family: 'Inter', system-ui, sans-serif;
       background:
-        radial-gradient(1200px 500px at 50% -10%, #1c1c1f 0%, transparent 70%),
-        var(--negro);
+        radial-gradient(900px 600px at 85% 5%, rgba(245,196,0,0.06) 0%, transparent 55%),
+        radial-gradient(1000px 500px at 15% 0%, rgba(90,110,160,0.10) 0%, transparent 60%),
+        linear-gradient(180deg, #16181f 0%, #0e0f13 55%);
+      background-attachment: fixed;
       color: var(--texto);
       min-height: 100vh;
       padding-bottom: 48px;
@@ -61,8 +63,10 @@
     header {
       position: relative;
       text-align: center;
-      padding: 32px 20px 28px;
-      background: linear-gradient(180deg, #161618 0%, #0c0c0d 100%);
+      padding: 38px 20px 30px;
+      background:
+        radial-gradient(600px 300px at 50% -40%, rgba(245,196,0,0.12) 0%, transparent 70%),
+        linear-gradient(180deg, #1c1f27 0%, #14161c 100%);
       border-bottom: 1px solid var(--borde);
       overflow: hidden;
     }
@@ -71,22 +75,22 @@
       position: absolute;
       left: 0; right: 0; bottom: 0;
       height: 3px;
-      background: repeating-linear-gradient(90deg, var(--amarillo) 0 14px, #0c0c0d 14px 28px);
+      background: repeating-linear-gradient(90deg, var(--amarillo) 0 14px, transparent 14px 28px);
       opacity: 0.9;
     }
 
     .logo {
-      width: 150px;
+      width: 168px;
       height: auto;
-      margin: 0 auto 6px;
+      margin: 0 auto 10px;
       display: block;
-      filter: drop-shadow(0 6px 18px rgba(0,0,0,0.5));
+      filter: drop-shadow(0 8px 24px rgba(0,0,0,0.55));
     }
 
     header .tagline {
-      font-size: 13px;
+      font-size: 13.5px;
       color: var(--texto-suave);
-      margin-top: 10px;
+      margin-top: 12px;
       letter-spacing: 0.2px;
     }
     header .tagline b { color: var(--amarillo); font-weight: 600; }
@@ -94,8 +98,16 @@
     /* ===== CONTENEDOR ===== */
     .form-container {
       max-width: 540px;
-      margin: 0 auto;
-      padding: 24px 18px;
+      margin: -18px auto 0;
+      padding: 26px 22px;
+      position: relative;
+      background: linear-gradient(180deg, rgba(36,39,49,0.55), rgba(26,28,34,0.55));
+      border: 1px solid var(--borde);
+      border-radius: 20px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+    }
+    @media (max-width: 600px) {
+      .form-container { margin: 0; border-radius: 0; border-left: none; border-right: none; }
     }
 
     .info-bar {
@@ -103,13 +115,14 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      background: var(--panel);
+      background: linear-gradient(135deg, rgba(245,196,0,0.08), var(--panel));
       border: 1px solid var(--borde);
       border-radius: 14px;
-      padding: 14px 16px;
-      margin-bottom: 22px;
+      padding: 15px 16px;
+      margin-bottom: 24px;
       font-size: 14px;
       color: var(--texto-suave);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.25);
     }
     .info-bar a {
       color: var(--amarillo);
@@ -150,8 +163,8 @@
 
     input, select, textarea {
       width: 100%;
-      padding: 14px 15px;
-      background: var(--panel);
+      padding: 15px 16px;
+      background: rgba(255,255,255,0.03);
       border: 1px solid var(--borde);
       border-radius: 12px;
       color: var(--texto);
@@ -165,10 +178,10 @@
       outline: none;
       border-color: var(--amarillo);
       background: var(--panel-claro);
-      box-shadow: 0 0 0 3px rgba(245,196,0,0.12);
+      box-shadow: 0 0 0 3px rgba(245,196,0,0.15);
     }
 
-    input::placeholder, textarea::placeholder { color: #5a5a60; }
+    input::placeholder, textarea::placeholder { color: #6b6f7c; }
     select option { background: var(--panel); color: var(--texto); }
     textarea { resize: none; height: 88px; }
 
@@ -391,7 +404,7 @@
 <body>
 
 <header>
-  <img src="/logo.jpg" alt="Reserva Taxi Las Palmas de Gran Canaria" class="logo" />
+  <img src="/logo.png" alt="Reserva Taxi Las Palmas de Gran Canaria" class="logo" />
   <p class="tagline">Transfers y traslados con reserva previa · <b>reserva con antelación</b></p>
 </header>
 <div class="form-container">
