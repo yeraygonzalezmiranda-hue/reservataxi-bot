@@ -3,7 +3,30 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Reserva Taxi Las Palmas de Gran Canaria</title>
+  <title>Transfer y Taxi en Gran Canaria | Reserva Taxi Las Palmas</title>
+  <meta name="description" content="Transfer y traslados privados en Gran Canaria: aeropuerto, puerto de cruceros, Maspalomas, Puerto Rico, Mogán y Las Palmas. Reserva online con conductores profesionales y licencias oficiales."/>
+  <meta name="keywords" content="transfer Gran Canaria, taxi aeropuerto Gran Canaria, transfer Maspalomas, transfer Puerto Rico, transfer Mogán, taxi Las Palmas, traslados Gran Canaria, transfer puerto cruceros Las Palmas"/>
+  <meta name="robots" content="index, follow"/>
+  <link rel="canonical" href="https://reservataxilaspalmas.com/" id="canonical-link"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:title" content="Transfer y Taxi en Gran Canaria | Reserva Taxi Las Palmas"/>
+  <meta property="og:description" content="Transfer y traslados privados en toda Gran Canaria. Reserva online tu traslado al aeropuerto, puerto de cruceros, hoteles y zonas turísticas."/>
+  <meta property="og:url" content="https://reservataxilaspalmas.com/" id="og-url"/>
+  <meta property="og:image" content="https://reservataxilaspalmas.com/logo.jpg" id="og-image"/>
+  <meta property="og:locale" content="es_ES"/>
+  <script>
+    // Ajustar las etiquetas SEO al dominio real desde el que se abre la página.
+    // Así cada dominio (reservataxilaspalmas.com y radiotaxigrancanaria.es) se
+    // presenta a Google como él mismo, sin conflictos de contenido duplicado.
+    (function () {
+      try {
+        var base = location.protocol + '//' + location.host + '/';
+        var c = document.getElementById('canonical-link'); if (c) c.href = base;
+        var u = document.getElementById('og-url'); if (u) u.setAttribute('content', base);
+        var i = document.getElementById('og-image'); if (i) i.setAttribute('content', base + 'logo.jpg');
+      } catch (e) {}
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Archivo:wght@600;700;800;900&display=swap" rel="stylesheet">
@@ -290,10 +313,80 @@
     }
     .pie a { color: var(--texto-suave); text-decoration: none; }
 
+    /* ===== SECCIÓN DE SERVICIOS (SEO) ===== */
+    .servicios {
+      max-width: 760px;
+      margin: 36px auto 0;
+      padding: 28px 20px 0;
+      border-top: 1px solid var(--borde);
+    }
+    .servicios h1 {
+      font-family: 'Archivo', sans-serif;
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--texto);
+      text-align: center;
+      margin-bottom: 6px;
+      line-height: 1.25;
+    }
+    .servicios .intro-seo {
+      text-align: center;
+      color: var(--texto-suave);
+      font-size: 14px;
+      margin-bottom: 26px;
+    }
+    .servicios h2 {
+      font-family: 'Archivo', sans-serif;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--amarillo);
+      margin: 22px 0 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .servicios h2::before {
+      content: "🚖";
+      font-size: 15px;
+    }
+    .servicios p {
+      color: var(--texto-suave);
+      font-size: 14px;
+      line-height: 1.7;
+      margin-bottom: 6px;
+    }
+
     @media (prefers-reduced-motion: reduce) {
       * { animation: none !important; transition: none !important; }
     }
   </style>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TaxiService",
+    "name": "Reserva Taxi Las Palmas de Gran Canaria",
+    "description": "Transfer y traslados privados en toda Gran Canaria: aeropuerto, puerto de cruceros, Maspalomas, Puerto Rico, Mogán y Las Palmas.",
+    "url": "https://reservataxilaspalmas.com/",
+    "telephone": "+34828810938",
+    "email": "reservas@taxilaspalmasdegrancanaria.com",
+    "areaServed": {
+      "@type": "Place",
+      "name": "Gran Canaria, Islas Canarias, España"
+    },
+    "provider": {
+      "@type": "LocalBusiness",
+      "name": "Reserva Taxi Las Palmas de Gran Canaria",
+      "image": "https://reservataxilaspalmas.com/logo.jpg",
+      "telephone": "+34828810938",
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": "Las Palmas de Gran Canaria",
+        "addressRegion": "Las Palmas",
+        "addressCountry": "ES"
+      }
+    }
+  }
+  </script>
 </head>
 <body>
 
@@ -411,6 +504,35 @@
     <p id="rechazo-texto"></p>
     <button class="btn-volver" onclick="volverFormulario()">Volver a intentar</button>
   </div>
+
+  <section class="servicios">
+    <h1>Especialistas en Transfer y Traslados en Gran Canaria</h1>
+    <p class="intro-seo">En Reserva Taxi Las Palmas somos especialistas en servicios de Transfer y traslados privados en toda Gran Canaria. Ofrecemos un servicio profesional, puntual y seguro para residentes, turistas, empresas y grupos que necesitan desplazarse cómodamente por la isla.</p>
+
+    <h2>Transfer Aeropuerto Gran Canaria</h2>
+    <p>Realizamos servicios de Transfer Aeropuerto Gran Canaria las 24 horas del día. Gestionamos recogidas y traslados desde el Aeropuerto de Gran Canaria (LPA) hacia hoteles, apartamentos, puertos, centros turísticos y cualquier destino de la isla. También ofrecemos traslados de regreso al aeropuerto con reserva previa.</p>
+
+    <h2>Transfer Puerto de Cruceros Las Palmas</h2>
+    <p>Servicio especializado de Transfer Puerto de Cruceros Las Palmas para pasajeros que llegan o salen desde el Puerto de Las Palmas. Realizamos traslados directos entre el puerto, el aeropuerto, hoteles, estaciones marítimas y los principales destinos turísticos de Gran Canaria.</p>
+
+    <h2>Transfer Maspalomas</h2>
+    <p>Servicio de Transfer Maspalomas con recogidas y destinos en hoteles, villas, apartamentos y complejos turísticos. Traslados rápidos y cómodos desde el aeropuerto, el puerto de cruceros y cualquier punto de la isla.</p>
+
+    <h2>Transfer Puerto Rico</h2>
+    <p>Ofrecemos servicios de Transfer Puerto Rico para viajeros que desean desplazarse entre el aeropuerto, hoteles, puertos deportivos, playas y zonas turísticas. Servicio disponible con reserva previa durante todo el año.</p>
+
+    <h2>Transfer Mogán</h2>
+    <p>Servicio profesional de Transfer Mogán y Puerto de Mogán. Realizamos traslados directos desde el aeropuerto, puertos de cruceros, hoteles y cualquier municipio de Gran Canaria con máxima puntualidad y comodidad.</p>
+
+    <h2>Transfer Ciudad de Las Palmas</h2>
+    <p>Disponemos de servicios de Transfer Ciudad de Las Palmas para desplazamientos desde y hacia hoteles, oficinas, centros comerciales, hospitales, zonas de negocios y lugares de interés de la capital. Realizamos traslados directos sin esperas y con reserva anticipada.</p>
+
+    <h2>Transfer Directos en Toda Gran Canaria</h2>
+    <p>Realizamos Transfer directos entre cualquier punto de Gran Canaria, incluyendo Aeropuerto de Gran Canaria, Puerto de Cruceros Las Palmas, Maspalomas, Meloneras, Playa del Inglés, San Agustín, Puerto Rico, Mogán, Arguineguín, Las Canteras, Triana, Vegueta y Ciudad de Las Palmas.</p>
+
+    <h2>Reserva Online de Transfer en Gran Canaria</h2>
+    <p>Nuestro sistema de reserva online permite solicitar fácilmente un Transfer en Gran Canaria indicando origen, destino, fecha, hora, número de pasajeros y equipaje. Trabajamos con conductores profesionales y licencias oficiales para garantizar un servicio seguro, fiable y adaptado a las necesidades de cada cliente.</p>
+  </section>
 
   <div class="pie">
     Reserva Taxi Las Palmas de Gran Canaria<br>
