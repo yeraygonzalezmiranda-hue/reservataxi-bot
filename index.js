@@ -848,14 +848,8 @@ async function repartirReservaAConductores(reserva) {
   // Así, al aceptar, se actualizan TODOS los mensajes (de todos los reenvíos) a "ya asignado".
   const mensajesEnviados = Array.isArray(reserva.mensajesEnviados) ? [...reserva.mensajesEnviados] : [];
   const texto = `🚖 NUEVA RESERVA DISPONIBLE — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, 'disponible')}\n⏰ Responde rápido para aceptarla.`;
-  const rutaAlarma = path.join(__dirname, 'public', 'alarma.mp3');
-  const hayAlarma = fs.existsSync(rutaAlarma);
   for (const conductor of conductores) {
     try {
-      // Aviso sonoro: enviar el audio de alarma justo antes de la reserva (si existe el archivo)
-      if (hayAlarma) {
-        try { await bot.sendAudio(conductor.chatId, rutaAlarma, { title: '🚖 Nueva reserva', performer: 'Reserva Taxi LPA' }); } catch (e) {}
-      }
       const msg = await bot.sendMessage(conductor.chatId, texto, {
         reply_markup: { inline_keyboard: [[
           { text: '✅ Aceptar', callback_data: `aceptar_${reserva._id}` },
