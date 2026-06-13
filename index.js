@@ -2,6 +2,7 @@ const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
 const mongoose = require('mongoose');
 const path = require('path');
+const fs = require('fs');
 const https = require('https');
 
 const TOKEN = process.env.BOT_TOKEN;
@@ -259,7 +260,76 @@ app.get('/version', (req, res) => {
   res.send(`VERSION 2 — Bloqueo de ${MINIMO_HORAS_ANTELACION}h ACTIVO ✅ | Hora Canarias: ${ahoraCanarias().toLocaleString('es-ES')}`);
 });
 
-const bot = new TelegramBot(TOKEN, { polling: true });
+// Configuración pública para el formulario web: le dice la antelación mínima actual
+// (en horas) para que el texto y la validación coincidan con lo que tienes en el bot.
+app.get('/config-publica', (req, res) => {
+  res.json({
+    antelacionHoras: cacheConfig.antelacion,
+    antelacionTexto: horasATexto(cacheConfig.antelacion),
+    telefono: '828 810 938'
+  });
+});
+
+// Polling con reintentos automáticos: si Telegram o la red fallan, no se rinde.
+const bot = new TelegramBot(TOKEN, {
+  polling: {
+    interval: 300,           // cada cuánto pregunta a Telegram (ms)
+    autoStart: true,
+    params: { timeout: 10 }, // espera de cada consulta (segundos)
+  }
+});
+
+// Gestión de errores de polling: el bot se recupera solo en vez de quedarse colgado.
+let avisoCaidaEnviado = false;
+bot.on('polling_error', (error) => {
+  const codigo = error && error.code ? error.code : 'desconocido';
+  console.error(`⚠️ polling_error [${codigo}]:`, error && error.message ? error.message : error);
+
+  // Error 409 = hay DOS instancias del bot a la vez (dos despliegues). Avisar y reintentar.
+  if (codigo === 'ETELEGRAM' && String(error.message).includes('409')) {
+    console.error('Conflicto 409: parece que hay dos instancias del bot ejecutándose.');
+  }
+
+  // Si es un fallo de red/conexión, reintentar el polling tras unos segundos.
+  if (codigo === 'EFATAL' || codigo === 'ETIMEDOUT' || codigo === 'ECONNRESET') {
+    setTimeout(() => {
+      bot.stopPolling().then(() => bot.startPolling()).catch(() => {});
+    }, 5000);
+  }
+});
+
+// Error general del bot (no detiene el proceso, solo lo registra).
+bot.on('error', (error) => {
+  console.error('⚠️ Error general del bot:', error && error.message ? error.message : error);
+});
+
+// Latido de salud: cada 5 minutos comprueba que el bot sigue conectado a Telegram.
+// Si se cae la conexión, avisa al admin una sola vez y trata de reconectar.
+setInterval(async () => {
+  try {
+    await bot.getMe();
+    if (avisoCaidaEnviado) {
+      avisoCaidaEnviado = false;
+      try { await bot.sendMessage(OWNER_CHAT_ID, '✅ El bot ha recuperado la conexión y funciona con normalidad.'); } catch (e) {}
+    }
+  } catch (e) {
+    console.error('⚠️ El bot no responde a getMe():', e.message);
+    if (!avisoCaidaEnviado) {
+      avisoCaidaEnviado = true;
+      try { await bot.sendMessage(OWNER_CHAT_ID, '⚠️ Aviso: el bot está teniendo problemas de conexión con Telegram. Intentando reconectar automáticamente.'); } catch (e2) {}
+    }
+    try { await bot.stopPolling(); await bot.startPolling(); } catch (e3) {}
+  }
+}, 5 * 60 * 1000);
+
+// Si ocurre un error no capturado en cualquier parte, lo registramos para que el
+// proceso NO se cierre de golpe (Railway lo reiniciaría, pero así evitamos caídas tontas).
+process.on('unhandledRejection', (motivo) => {
+  console.error('⚠️ Promesa rechazada sin gestionar:', motivo);
+});
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ Excepción no capturada:', err && err.message ? err.message : err);
+});
 
 // =================== TARIFAS ===================
 
@@ -777,11 +847,16 @@ async function repartirReservaAConductores(reserva) {
   // Acumular sobre los mensajes que ya hubiera (de reenvíos anteriores), no reemplazar.
   // Así, al aceptar, se actualizan TODOS los mensajes (de todos los reenvíos) a "ya asignado".
   const mensajesEnviados = Array.isArray(reserva.mensajesEnviados) ? [...reserva.mensajesEnviados] : [];
-  const texto = `🚖 *NUEVA RESERVA DISPONIBLE* — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, 'disponible')}\n⏰ Responde rápido para aceptarla.`;
+  const texto = `🚖 NUEVA RESERVA DISPONIBLE — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, 'disponible')}\n⏰ Responde rápido para aceptarla.`;
+  const rutaAlarma = path.join(__dirname, 'public', 'alarma.mp3');
+  const hayAlarma = fs.existsSync(rutaAlarma);
   for (const conductor of conductores) {
     try {
+      // Aviso sonoro: enviar el audio de alarma justo antes de la reserva (si existe el archivo)
+      if (hayAlarma) {
+        try { await bot.sendAudio(conductor.chatId, rutaAlarma, { title: '🚖 Nueva reserva', performer: 'Reserva Taxi LPA' }); } catch (e) {}
+      }
       const msg = await bot.sendMessage(conductor.chatId, texto, {
-        parse_mode: 'Markdown',
         reply_markup: { inline_keyboard: [[
           { text: '✅ Aceptar', callback_data: `aceptar_${reserva._id}` },
           { text: '❌ Rechazar', callback_data: `rechazar_${reserva._id}` }
@@ -817,11 +892,21 @@ bot.on('callback_query', async (query) => {
       const comision = await registrarComision(reserva, chatId);
       const comisionTxt = comision ? `\n💰 Comisión registrada: ${comision}€` : '';
 
-      // Mensaje al taxista con botón de "Servicio completado"
-      bot.editMessageText(`✅ *Reserva aceptada* — ${numReserva(reserva.numero)}\n\nHas aceptado este servicio.${comisionTxt}`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-      bot.sendMessage(chatId, `📋 *Detalles del servicio:*\n\n${formatearReserva(reserva.datos, false)}`, {
-        parse_mode: 'Markdown',
-        reply_markup: { inline_keyboard: [[ { text: '🏁 Marcar servicio completado', callback_data: `completar_${reserva._id}` } ]] }
+      // Mensaje al taxista con botones de navegación y completado
+      bot.editMessageText(`✅ Reserva aceptada — ${numReserva(reserva.numero)}\n\nHas aceptado este servicio.${comisionTxt}`, { chat_id: chatId, message_id: messageId });
+
+      // Enlace a Google Maps para la recogida: usa coordenadas exactas si las hay,
+      // y si no, la dirección de texto. Sirve para que el conductor navegue directo.
+      const recogida = (reserva.datos.origenCoords && reserva.datos.origenCoords.includes(','))
+        ? reserva.datos.origenCoords
+        : reserva.datos.origen;
+      const enlaceMapa = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(recogida)}&travelmode=driving`;
+
+      bot.sendMessage(chatId, `📋 Detalles del servicio:\n\n${formatearReserva(reserva.datos, false)}`, {
+        reply_markup: { inline_keyboard: [
+          [ { text: '🧭 Ir a la recogida (Google Maps)', url: enlaceMapa } ],
+          [ { text: '🏁 Marcar servicio completado', callback_data: `completar_${reserva._id}` } ]
+        ]}
       });
       bot.sendMessage(OWNER_CHAT_ID, `✅ Reserva asignada — ${numReserva(reserva.numero)}\n\nConductor: ${nombreConductor}\n\n${formatearReserva(reserva.datos, true)}`);
 
@@ -995,44 +1080,54 @@ function numReserva(numero) {
 // Línea de municipio (cabecera): 🏙️ Municipio: TELDE  o  ✈️ AEROPUERTO
 function lineaMunicipio(data) {
   if (!data.municipio) return '';
-  if (data.municipio === 'AEROPUERTO') return `✈️ *AEROPUERTO*\n`;
-  return `🏙️ *Municipio:* ${data.municipio}\n`;
+  if (data.municipio === 'AEROPUERTO') return `✈️ Zona: AEROPUERTO\n`;
+  return `📍 Zona: ${data.municipio}\n`;
 }
 
 // nivel: 'disponible' (sin datos personales), 'taxista' (nombre sí, contacto no), 'admin' (todo)
 // Se mantiene compatibilidad: true => 'admin', false => 'taxista'
+// Texto plano (sin Markdown) para que ningún carácter de las direcciones corte el mensaje.
 function formatearReserva(data, nivel = 'taxista') {
   if (nivel === true) nivel = 'admin';
   if (nivel === false) nivel = 'taxista';
 
+  const linea = '━━━━━━━━━━━━━━━';
   let msg = '';
 
   if (nivel === 'disponible') {
-    // Estado PENDIENTE: solo municipio, fecha, hora, pasajeros y destino.
+    // Estado PENDIENTE: solo zona, fecha, hora, destino y pasajeros.
     // Se ocultan origen exacto, precio y datos del cliente hasta que un taxista acepta.
     msg += lineaMunicipio(data);
-    msg += `\n📅 Fecha: ${data.fecha} a las ${data.hora}\n`;
-    msg += `🏁 Destino: ${data.destino}\n`;
-    msg += `👥 Pasajeros: ${data.pasajeros}\n`;
+    msg += linea + '\n';
+    msg += `🗓️ ${data.fecha}\n`;
+    msg += `🕐 ${data.hora} h\n`;
+    msg += `🎯 Hacia: ${data.destino}\n`;
+    msg += `👥 ${data.pasajeros} pasajero(s)\n`;
     return msg;
   }
 
-  // Niveles 'taxista' y 'admin': llevan el nombre del cliente
+  // Niveles 'taxista' y 'admin'
   msg += lineaMunicipio(data);
-  msg += `👤 *${nivel === 'admin' ? 'Nombre' : 'Cliente'}:* ${data.nombre}\n`;
+  msg += linea + '\n';
+  msg += `🗓️ ${data.fecha}  ·  🕐 ${data.hora} h\n`;
+  msg += `\n`;
+  msg += `🟢 Recogida:\n   ${data.origen}\n`;
+  msg += `🔴 Destino:\n   ${data.destino}\n`;
+  msg += `\n`;
+  msg += `👥 Pasajeros: ${data.pasajeros}\n`;
+  if (data.precioEstimado) msg += `💰 Tarifa estimada: ${data.precioEstimado} €\n`;
+  if (data.vuelo) msg += `✈️ Vuelo: ${data.vuelo}\n`;
+  if (data.pasaporte) msg += `🛂 Pasaporte: ${data.pasaporte}\n`;
+  if (data.observaciones) msg += `📝 Notas: ${data.observaciones}\n`;
+  msg += linea + '\n';
+
+  // Datos del cliente
+  msg += `\n👤 Cliente: ${data.nombre}\n`;
   if (nivel === 'admin') {
     // Solo el admin ve el contacto del cliente
-    msg += `📧 *Correo:* ${data.correo}\n`;
-    msg += `📞 *Teléfono:* ${data.telefono}\n`;
+    msg += `📧 ${data.correo}\n`;
+    msg += `📞 ${data.telefono}\n`;
   }
-  msg += `📅 *Fecha:* ${data.fecha} a las ${data.hora}\n`;
-  msg += `📍 *Origen:* ${data.origen}\n`;
-  msg += `🏁 *Destino:* ${data.destino}\n`;
-  msg += `👥 *Pasajeros:* ${data.pasajeros}\n`;
-  if (data.precioEstimado) msg += `💰 *Precio estimado:* ${data.precioEstimado} €\n`;
-  if (data.vuelo) msg += `✈️ *Vuelo:* ${data.vuelo}\n`;
-  if (data.pasaporte) msg += `🛂 *Pasaporte:* ${data.pasaporte}\n`;
-  if (data.observaciones) msg += `📝 *Observaciones:* ${data.observaciones}\n`;
   return msg;
 }
 
@@ -1065,26 +1160,12 @@ app.post('/reserva', async (req, res) => {
 
     const numero = await siguienteNumeroReserva();
     const reserva = await Reserva.create({ numero, datos: data, clienteChatId: clienteChatId || null, fechaServicio });
-    const mensajesEnviados = [];
-    const texto = `🚖 *NUEVA RESERVA DISPONIBLE* — ${numReserva(numero)}\n\n${formatearReserva(data, 'disponible')}\n⏰ Responde rápido para aceptarla.`;
 
-    for (const conductor of conductores) {
-      try {
-        const msg = await bot.sendMessage(conductor.chatId, texto, {
-          parse_mode: 'Markdown',
-          disable_notification: false,
-          reply_markup: { inline_keyboard: [[
-            { text: '✅ Aceptar', callback_data: `aceptar_${reserva._id}` },
-            { text: '❌ Rechazar', callback_data: `rechazar_${reserva._id}` }
-          ]]}
-        });
-        mensajesEnviados.push({ chatId: conductor.chatId, messageId: msg.message_id });
-      } catch (e) { console.error(`Error enviando a conductor:`, e.message); }
-    }
+    // Usar la función unificada: envía el audio de alarma + el mensaje a cada conductor
+    // y guarda los mensajes para poder actualizarlos todos al aceptar.
+    const numEnviados = await repartirReservaAConductores(reserva);
 
-    reserva.mensajesEnviados = mensajesEnviados;
-    await reserva.save();
-    await bot.sendMessage(OWNER_CHAT_ID, `📨 Nueva reserva enviada a ${conductores.length} conductor(es)\n\n${formatearReserva(data, true)}`);
+    await bot.sendMessage(OWNER_CHAT_ID, `📨 Nueva reserva enviada a ${numEnviados} conductor(es)\n\n${formatearReserva(data, true)}`);
     res.json({ ok: true, reservaId: reserva._id });
   } catch (err) {
     console.error(err);
