@@ -2,3 +2,4 @@ User-agent: *
 Allow: /
 
 Sitemap: https://reservataxilaspalmas.com/sitemap.xml
+Sitemap: https://radiotaxigrancanaria.es/sitemap.xml
