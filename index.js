@@ -253,6 +253,29 @@ async function cargarFestivosIniciales() {
 
 const app = express();
 app.use(express.json());
+
+// --- SEO: servir la home y reservar.html con el canonical/og del dominio real ---
+// Cada dominio (reservataxilaspalmas.com y radiotaxigrancanaria.es) se presenta a
+// Google como él mismo, para que ambos posicionen por separado sin contenido duplicado.
+function servirConCanonical(nombreArchivo) {
+  return (req, res, next) => {
+    try {
+      const ruta = path.join(__dirname, 'public', nombreArchivo);
+      if (!fs.existsSync(ruta)) return next();
+      let html = fs.readFileSync(ruta, 'utf8');
+      const host = req.headers.host || 'reservataxilaspalmas.com';
+      const base = 'https://' + host + '/';
+      // Sustituir el canonical y og:url fijos por el dominio real de la petición
+      html = html.replace(/https:\/\/reservataxilaspalmas\.com\//g, base);
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      return res.send(html);
+    } catch (e) { return next(); }
+  };
+}
+app.get('/', servirConCanonical('index.html'));
+app.get('/index.html', servirConCanonical('index.html'));
+app.get('/reservar.html', servirConCanonical('reservar.html'));
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Página para comprobar qué versión está desplegada
