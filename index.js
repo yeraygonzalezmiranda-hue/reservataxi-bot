@@ -81,37 +81,78 @@ async function enviarEmailConfirmacion(datos, reservaId, nombreConductor, numero
     return;
   }
   try {
-    const precioHtml = datos.precioEstimado ? `<p><strong>Precio estimado:</strong> ${datos.precioEstimado} €</p>` : '';
-    const numeroHtml = numero ? `<p>🎫 <strong>Nº de reserva:</strong> RT-${String(numero).padStart(4, '0')}</p>` : '';
+    // Idioma del cliente (es / en / de). Por defecto español.
+    const idioma = ['es', 'en', 'de'].includes(datos.idioma) ? datos.idioma : 'es';
+    const T = {
+      es: {
+        subject: 'Tu reserva de taxi ha sido confirmada',
+        confirmada: '✅ Tu reserva ha sido confirmada',
+        hola: (n) => `Hola <strong>${n}</strong>, un conductor ha aceptado tu servicio.`,
+        nReserva: 'Nº de reserva:', conductor: 'Tu conductor:',
+        fecha: 'Fecha:', alas: 'a las', origen: 'Origen:', destino: 'Destino:',
+        pasajeros: 'Pasajeros:', precio: 'Precio estimado:',
+        necesitasCancelar: '¿Necesitas cancelar tu reserva?', cancelarBtn: 'Cancelar mi reserva',
+        cancelarNota: 'Solo se puede cancelar online hasta 2 horas antes del servicio.',
+        conductorPunto: '🚖 Un conductor estará en el punto de recogida a la hora indicada.',
+        cancelarConsultas: '📞 Para cancelar o consultas:'
+      },
+      en: {
+        subject: 'Your taxi booking has been confirmed',
+        confirmada: '✅ Your booking has been confirmed',
+        hola: (n) => `Hello <strong>${n}</strong>, a driver has accepted your service.`,
+        nReserva: 'Booking no.:', conductor: 'Your driver:',
+        fecha: 'Date:', alas: 'at', origen: 'Pickup:', destino: 'Destination:',
+        pasajeros: 'Passengers:', precio: 'Estimated price:',
+        necesitasCancelar: 'Need to cancel your booking?', cancelarBtn: 'Cancel my booking',
+        cancelarNota: 'Online cancellation is only possible up to 2 hours before the service.',
+        conductorPunto: '🚖 A driver will be at the pickup point at the scheduled time.',
+        cancelarConsultas: '📞 To cancel or for any questions:'
+      },
+      de: {
+        subject: 'Ihre Taxibuchung wurde bestätigt',
+        confirmada: '✅ Ihre Buchung wurde bestätigt',
+        hola: (n) => `Hallo <strong>${n}</strong>, ein Fahrer hat Ihren Service angenommen.`,
+        nReserva: 'Buchungsnr.:', conductor: 'Ihr Fahrer:',
+        fecha: 'Datum:', alas: 'um', origen: 'Abholort:', destino: 'Zielort:',
+        pasajeros: 'Passagiere:', precio: 'Geschätzter Preis:',
+        necesitasCancelar: 'Müssen Sie Ihre Buchung stornieren?', cancelarBtn: 'Meine Buchung stornieren',
+        cancelarNota: 'Eine Online-Stornierung ist nur bis 2 Stunden vor dem Service möglich.',
+        conductorPunto: '🚖 Ein Fahrer wird zur angegebenen Zeit am Abholort sein.',
+        cancelarConsultas: '📞 Zum Stornieren oder bei Fragen:'
+      }
+    }[idioma];
+
+    const precioHtml = datos.precioEstimado ? `<p><strong>${T.precio}</strong> ${datos.precioEstimado} €</p>` : '';
+    const numeroHtml = numero ? `<p>🎫 <strong>${T.nReserva}</strong> RT-${String(numero).padStart(4, '0')}</p>` : '';
     // Solo el NOMBRE del conductor, nunca su teléfono.
-    const conductorHtml = nombreConductor ? `<p>🚖 <strong>Tu conductor:</strong> ${nombreConductor}</p>` : '';
+    const conductorHtml = nombreConductor ? `<p>🚖 <strong>${T.conductor}</strong> ${nombreConductor}</p>` : '';
     const base = process.env.BASE_URL || '';
     const cancelarHtml = (reservaId && base) ? `
         <div style="background:#fff;border:1px solid #f0d0d0;border-radius:8px;padding:16px;margin:16px 0;text-align:center;">
-          <p style="margin:0 0 12px;color:#666;font-size:14px;">¿Necesitas cancelar tu reserva?</p>
-          <a href="${base}/cancelar?id=${reservaId}" style="display:inline-block;padding:12px 24px;background:#e05050;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">Cancelar mi reserva</a>
-          <p style="margin:12px 0 0;color:#999;font-size:12px;">Solo se puede cancelar online hasta 2 horas antes del servicio.</p>
+          <p style="margin:0 0 12px;color:#666;font-size:14px;">${T.necesitasCancelar}</p>
+          <a href="${base}/cancelar?id=${reservaId}" style="display:inline-block;padding:12px 24px;background:#e05050;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">${T.cancelarBtn}</a>
+          <p style="margin:12px 0 0;color:#999;font-size:12px;">${T.cancelarNota}</p>
         </div>` : '';
     await enviarEmailBrevo({
       sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
       to: [{ email: datos.correo, name: datos.nombre }],
-      subject: 'Tu reserva de taxi ha sido confirmada',
+      subject: T.subject,
       htmlContent: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f9f9f9;max-width:600px;margin:0 auto;">
         <h2 style="color:#f5c400;background:#1a1a1a;padding:16px;border-radius:8px;">🚖 Reserva Taxi Las Palmas</h2>
-        <h3 style="color:#2d8a2d;">✅ Tu reserva ha sido confirmada</h3>
-        <p>Hola <strong>${datos.nombre}</strong>, un conductor ha aceptado tu servicio.</p>
+        <h3 style="color:#2d8a2d;">${T.confirmada}</h3>
+        <p>${T.hola(datos.nombre)}</p>
         <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:16px;margin:16px 0;">
           ${numeroHtml}
           ${conductorHtml}
-          <p>📅 <strong>Fecha:</strong> ${datos.fecha} a las ${datos.hora}</p>
-          <p>📍 <strong>Origen:</strong> ${datos.origen}</p>
-          <p>🏁 <strong>Destino:</strong> ${datos.destino}</p>
-          <p>👥 <strong>Pasajeros:</strong> ${datos.pasajeros}</p>
+          <p>📅 <strong>${T.fecha}</strong> ${datos.fecha} ${T.alas} ${datos.hora}</p>
+          <p>📍 <strong>${T.origen}</strong> ${datos.origen}</p>
+          <p>🏁 <strong>${T.destino}</strong> ${datos.destino}</p>
+          <p>👥 <strong>${T.pasajeros}</strong> ${datos.pasajeros}</p>
           ${precioHtml}
         </div>
         ${cancelarHtml}
-        <p>🚖 Un conductor estará en el punto de recogida a la hora indicada.</p>
-        <p>📞 Para cancelar o consultas: <strong>828 810 938</strong></p>
+        <p>${T.conductorPunto}</p>
+        <p>${T.cancelarConsultas} <strong>828 810 938</strong></p>
         <p>✉️ reservas@taxilaspalmasdegrancanaria.com</p>
       </div>`
     });
