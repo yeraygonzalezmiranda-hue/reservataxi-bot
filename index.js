@@ -749,32 +749,42 @@ function iniciarResumenMensual() {
 
 bot.onText(/\/diagcalendar/, async (msg) => {
   if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
+  // Forzar reinicio del cliente en caché por si arrancó con credenciales incorrectas
+  calendarClient = null;
+
   let informe = '🔍 *DIAGNÓSTICO GOOGLE CALENDAR*\n\n';
-  // 1) ¿Existen las variables?
-  informe += `1️⃣ Variable credenciales: ${GOOGLE_CALENDAR_CREDENTIALS ? '✅ existe' : '❌ NO existe'}\n`;
-  informe += `2️⃣ Variable ID: ${GOOGLE_CALENDAR_ID ? `✅ ${GOOGLE_CALENDAR_ID}` : '❌ NO existe'}\n`;
-  // 2) ¿Se puede leer la credencial?
+  informe += `1️⃣ Variable credenciales: ${GOOGLE_CALENDAR_CREDENTIALS ? '✅ existe (' + GOOGLE_CALENDAR_CREDENTIALS.length + ' chars)' : '❌ NO existe'}\n`;
+  informe += `2️⃣ Variable CALENDAR\\_ID: ${GOOGLE_CALENDAR_ID ? `✅ ${GOOGLE_CALENDAR_ID}` : '❌ NO existe'}\n`;
+
   try {
     let raw = (GOOGLE_CALENDAR_CREDENTIALS || '').trim();
-    if (!raw.startsWith('{')) {
+    const esBase64 = !raw.startsWith('{');
+    if (esBase64) {
       raw = Buffer.from(raw, 'base64').toString('utf-8');
-      informe += `3️⃣ Formato: Base64 → descodificado\n`;
+      informe += `3️⃣ Formato: Base64 ✅ (descodificado OK)\n`;
     } else {
       informe += `3️⃣ Formato: JSON directo\n`;
     }
     const cred = JSON.parse(raw);
     informe += `4️⃣ JSON válido: ✅\n`;
-    informe += `5️⃣ client_email: ${cred.client_email ? '✅ ' + cred.client_email.substring(0, 25) + '...' : '❌ falta'}\n`;
-    informe += `6️⃣ private_key: ${cred.private_key ? (cred.private_key.includes('BEGIN PRIVATE KEY') ? '✅ presente' : '⚠️ formato raro') : '❌ falta'}\n`;
+    informe += `5️⃣ client\\_email: ${cred.client_email ? '✅ ' + cred.client_email : '❌ falta'}\n`;
+    const pk = cred.private_key || '';
+    const tieneHeader = pk.includes('BEGIN PRIVATE KEY');
+    const tieneSaltos = pk.includes('\n');
+    informe += `6️⃣ private\\_key: ${tieneHeader ? '✅ header OK' : '❌ sin header'} | saltos: ${tieneSaltos ? '✅' : '❌'}\n`;
   } catch (e) {
-    informe += `4️⃣ ❌ Error al leer credenciales: ${e.message}\n`;
+    informe += `4️⃣ ❌ Error leyendo credenciales: ${e.message}\n`;
   }
-  // 3) Intentar crear un evento de prueba
-  informe += `\n7️⃣ Probando crear evento de prueba...\n`;
+
+  informe += `\n7️⃣ Probando conexión real con Calendar...`;
   bot.sendMessage(OWNER_CHAT_ID, informe, { parse_mode: 'Markdown' });
+
   try {
     const calendar = getCalendarClient();
-    if (!calendar) { bot.sendMessage(OWNER_CHAT_ID, '❌ No se pudo crear el cliente de Calendar (revisa credenciales).'); return; }
+    if (!calendar) {
+      bot.sendMessage(OWNER_CHAT_ID, '❌ getCalendarClient() devolvió null. Las credenciales no se pudieron procesar.');
+      return;
+    }
     const ahora = new Date();
     const inicio = new Date(ahora.getTime() + 24 * 60 * 60 * 1000);
     const res = await calendar.events.insert({
@@ -782,12 +792,12 @@ bot.onText(/\/diagcalendar/, async (msg) => {
       requestBody: {
         summary: '✅ PRUEBA — Bot Taxi (puedes borrar este evento)',
         start: { dateTime: inicio.toISOString(), timeZone: 'Atlantic/Canary' },
-        end: { dateTime: new Date(inicio.getTime() + 30*60*1000).toISOString(), timeZone: 'Atlantic/Canary' }
+        end: { dateTime: new Date(inicio.getTime() + 30 * 60 * 1000).toISOString(), timeZone: 'Atlantic/Canary' }
       }
     });
-    bot.sendMessage(OWNER_CHAT_ID, `✅ *¡FUNCIONA!* Evento de prueba creado en tu calendario (mañana a esta hora). ID: ${res.data.id}\n\nPuedes borrarlo. El calendario ya está conectado correctamente.`, { parse_mode: 'Markdown' });
+    bot.sendMessage(OWNER_CHAT_ID, `✅ *¡FUNCIONA!* Evento de prueba creado.\nID: ${res.data.id}\n\nYa puedes borrar ese evento del calendario.`, { parse_mode: 'Markdown' });
   } catch (e) {
-    bot.sendMessage(OWNER_CHAT_ID, `❌ Error al crear evento:\n\n${e.message}\n\nEnvíame esta captura.`);
+    bot.sendMessage(OWNER_CHAT_ID, `❌ *Error al conectar con Calendar:*\n\n\`${e.message}\`\n\nEnvíame esta captura.`, { parse_mode: 'Markdown' });
   }
 });
 
