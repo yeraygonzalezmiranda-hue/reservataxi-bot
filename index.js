@@ -12,6 +12,8 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_KEY;
 const COMISION_PORCENTAJE = 10;
 const MINIMO_HORAS_ANTELACION = 2; // valor inicial; el real se gestiona en cacheConfig.antelacion
+const LICENCIA_PRIORITARIA = '1374'; // Conductor con prioridad: recibe la reserva primero, sin comisión
+const MINUTOS_PRIORIDAD = 2; // Minutos que tiene el conductor prioritario antes de repartir al resto
 
 // Configuración ajustable en memoria (se rellena desde la BD al arrancar)
 let cacheConfig = { antelacion: 2, cancelacion: 0.5 };
@@ -169,6 +171,7 @@ async function enviarEmailConfirmacion(datos, reservaId, nombreConductor, numero
 const conductorSchema = new mongoose.Schema({
   chatId: { type: String, unique: true },
   nombre: String,
+  licencia: String,
   activo: { type: Boolean, default: true },
   fechaRegistro: { type: Date, default: Date.now }
 });
@@ -557,6 +560,11 @@ async function registrarComision(reserva, conductorChatId) {
   const precio = parseFloat(reserva.datos.precioEstimado);
   if (!precio || precio <= 0) return;
   const conductor = await Conductor.findOne({ chatId: conductorChatId });
+  // El conductor prioritario (licencia 1374) está EXENTO de comisión.
+  if (conductor && String(conductor.licencia) === String(LICENCIA_PRIORITARIA)) {
+    await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
+    return 0;
+  }
   const comision = Math.round(precio * COMISION_PORCENTAJE) / 100;
   const ahora = new Date();
   const mes = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
@@ -840,8 +848,11 @@ bot.onText(/\/conductores/, async (msg) => {
   const conductores = await Conductor.find().sort({ fechaRegistro: -1 });
   if (!conductores.length) return bot.sendMessage(OWNER_CHAT_ID, '👥 No hay conductores.');
   let texto = `👥 *CONDUCTORES (${conductores.length})*\n\n`;
-  conductores.forEach((c, i) => { texto += `*${i+1}.* ${c.nombre} — ${c.activo ? '🟢 Activo' : '🔴 Inactivo'}\n`; });
-  texto += `\n💡 Para pausar/activar:\n/desactivar NombreConductor\n/activar NombreConductor`;
+  conductores.forEach((c, i) => {
+    const lic = c.licencia ? ` (lic. ${c.licencia}${String(c.licencia) === String(LICENCIA_PRIORITARIA) ? ' ⭐' : ''})` : '';
+    texto += `*${i+1}.* ${c.nombre}${lic} — ${c.activo ? '🟢 Activo' : '🔴 Inactivo'}\n`;
+  });
+  texto += `\n💡 Para pausar/activar:\n/desactivar NombreConductor\n/activar NombreConductor\n\n🪪 Asignar licencia:\n/licencia NombreConductor Número`;
   bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
 });
 
@@ -865,6 +876,23 @@ bot.onText(/\/activar (.+)/, async (msg, match) => {
   await conductor.save();
   bot.sendMessage(OWNER_CHAT_ID, `🟢 *${conductor.nombre}* activado. Ya vuelve a recibir reservas.`, { parse_mode: 'Markdown' });
   try { bot.sendMessage(conductor.chatId, `🟢 Ya estás activo de nuevo. Volverás a recibir reservas.`); } catch (e) {}
+});
+
+bot.onText(/\/licencia (.+)/, async (msg, match) => {
+  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
+  // Formato: /licencia NombreConductor NúmeroLicencia   (ej: /licencia Taxi L.M 1374)
+  const partes = match[1].trim().split(/\s+/);
+  if (partes.length < 2) {
+    return bot.sendMessage(OWNER_CHAT_ID, `Uso: /licencia NombreConductor Número\n\nEjemplo: /licencia Taxi L.M 1374`);
+  }
+  const numLicencia = partes[partes.length - 1];       // el último trozo es la licencia
+  const nombre = partes.slice(0, -1).join(' ');         // lo anterior es el nombre
+  const conductor = await Conductor.findOne({ nombre: new RegExp(nombre, 'i') });
+  if (!conductor) return bot.sendMessage(OWNER_CHAT_ID, `❌ No encontrado: "${nombre}"`);
+  conductor.licencia = numLicencia;
+  await conductor.save();
+  const esPrioritario = String(numLicencia) === String(LICENCIA_PRIORITARIA);
+  bot.sendMessage(OWNER_CHAT_ID, `✅ Licencia ${numLicencia} asignada a *${conductor.nombre}*.${esPrioritario ? `\n\n⭐ Este conductor ahora es PRIORITARIO: recibirá cada reserva en exclusiva durante ${MINUTOS_PRIORIDAD} min y sin comisión.` : ''}`, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/eliminarconductor (.+)/, async (msg, match) => {
@@ -916,13 +944,13 @@ bot.onText(/\/cancelar/, async (msg) => {
 // =================== CALLBACKS ===================
 
 // Reparte una reserva (ya existente y en estado pendiente) a todos los conductores activos.
-async function repartirReservaAConductores(reserva) {
-  const conductores = await Conductor.find({ activo: true });
-  // Acumular sobre los mensajes que ya hubiera (de reenvíos anteriores), no reemplazar.
-  // Así, al aceptar, se actualizan TODOS los mensajes (de todos los reenvíos) a "ya asignado".
+// Envía la reserva a un conjunto de conductores y acumula los mensajes enviados.
+async function enviarReservaA(reserva, conductores) {
   const mensajesEnviados = Array.isArray(reserva.mensajesEnviados) ? [...reserva.mensajesEnviados] : [];
+  const yaEnviados = new Set(mensajesEnviados.map(m => String(m.chatId)));
   const texto = `🚖 NUEVA RESERVA DISPONIBLE — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, 'disponible')}\n⏰ Responde rápido para aceptarla.`;
   for (const conductor of conductores) {
+    if (yaEnviados.has(String(conductor.chatId))) continue; // no enviar dos veces al mismo
     try {
       const msg = await bot.sendMessage(conductor.chatId, texto, {
         reply_markup: { inline_keyboard: [[
@@ -935,7 +963,36 @@ async function repartirReservaAConductores(reserva) {
   }
   reserva.mensajesEnviados = mensajesEnviados;
   await reserva.save();
-  return conductores.length;
+  return mensajesEnviados.length;
+}
+
+async function repartirReservaAConductores(reserva) {
+  const conductores = await Conductor.find({ activo: true });
+  // ¿Hay un conductor prioritario (licencia 1374) activo?
+  const prioritario = conductores.find(c => String(c.licencia) === String(LICENCIA_PRIORITARIA));
+
+  if (prioritario) {
+    // FASE 1: enviar SOLO al conductor prioritario y esperar X minutos.
+    await enviarReservaA(reserva, [prioritario]);
+    try { bot.sendMessage(OWNER_CHAT_ID, `⭐ Reserva ${numReserva(reserva.numero)} enviada en exclusiva a ${prioritario.nombre} (lic. ${LICENCIA_PRIORITARIA}) durante ${MINUTOS_PRIORIDAD} min.`); } catch (e) {}
+    // Programar el reparto al resto si no la acepta a tiempo.
+    setTimeout(async () => {
+      try {
+        const actual = await Reserva.findById(reserva._id);
+        if (!actual || actual.estado !== 'pendiente') return; // ya la aceptó (él u otro), no hacer nada
+        const activos = await Conductor.find({ activo: true });
+        const resto = activos.filter(c => String(c.licencia) !== String(LICENCIA_PRIORITARIA));
+        if (resto.length) {
+          await enviarReservaA(actual, resto);
+          try { bot.sendMessage(OWNER_CHAT_ID, `⏱️ ${prioritario.nombre} no aceptó ${numReserva(actual.numero)} en ${MINUTOS_PRIORIDAD} min. Enviada al resto de conductores.`); } catch (e) {}
+        }
+      } catch (e) { console.error('Error en reparto diferido:', e.message); }
+    }, MINUTOS_PRIORIDAD * 60 * 1000);
+    return 1;
+  }
+
+  // Si no hay conductor prioritario, reparto normal a todos.
+  return await enviarReservaA(reserva, conductores);
 }
 
 bot.on('callback_query', async (query) => {
@@ -955,6 +1012,8 @@ bot.on('callback_query', async (query) => {
       reserva.conductorAsignado = chatId;
       const conductor = await Conductor.findOne({ chatId });
       const nombreConductor = conductor ? conductor.nombre : 'Un conductor';
+      // Nombre con licencia para mostrar al cliente (ej: "Taxi L.M (Licencia 1374)")
+      const conductorConLicencia = (conductor && conductor.licencia) ? `${nombreConductor} (Licencia ${conductor.licencia})` : nombreConductor;
       reserva.conductorNombre = nombreConductor;
       await reserva.save();
       const comision = await registrarComision(reserva, chatId);
@@ -991,7 +1050,7 @@ bot.on('callback_query', async (query) => {
         const precioTxt = d.precioEstimado ? `\n💰 *Precio estimado:* ${d.precioEstimado} €` : '';
         try {
           bot.sendMessage(reserva.clienteChatId,
-            `✅ *¡Tu reserva ha sido aceptada!*\n\n🎫 *Reserva:* ${numReserva(reserva.numero)}\n📅 *Fecha:* ${d.fecha} a las ${d.hora}\n📍 *Origen:* ${d.origen}\n🏁 *Destino:* ${d.destino}${precioTxt}\n\n🚖 *Tu conductor:* ${nombreConductor}\nEstará contigo a la hora indicada.\n\n❌ Para cancelar escribe /cancelar`,
+            `✅ *¡Tu reserva ha sido aceptada!*\n\n🎫 *Reserva:* ${numReserva(reserva.numero)}\n📅 *Fecha:* ${d.fecha} a las ${d.hora}\n📍 *Origen:* ${d.origen}\n🏁 *Destino:* ${d.destino}${precioTxt}\n\n🚖 *Tu conductor:* ${conductorConLicencia}\nEstará contigo a la hora indicada.\n\n❌ Para cancelar escribe /cancelar`,
             { parse_mode: 'Markdown' }
           );
         } catch (e) {}
@@ -999,7 +1058,7 @@ bot.on('callback_query', async (query) => {
 
       // Enviar email de confirmación SIEMPRE (web, WhatsApp, Telegram, Facebook...)
       // Solo se omite si la reserva no tiene correo.
-      await enviarEmailConfirmacion(reserva.datos, reserva._id, nombreConductor, reserva.numero);
+      await enviarEmailConfirmacion(reserva.datos, reserva._id, conductorConLicencia, reserva.numero);
 
       bot.answerCallbackQuery(query.id, { text: '✅ ¡Reserva aceptada!' });
     } catch (err) {
