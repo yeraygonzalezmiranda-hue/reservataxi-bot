@@ -41,10 +41,14 @@ function getCalendarClient() {
   if (calendarClient) return calendarClient;
   if (!GOOGLE_CALENDAR_CREDENTIALS || !GOOGLE_CALENDAR_ID) return null;
   try {
-    const credentials = JSON.parse(GOOGLE_CALENDAR_CREDENTIALS);
-    // Arreglar la clave privada: al pegar el JSON en Railway, los saltos de línea
-    // se guardan como texto "\n" en vez de saltos reales, y eso rompe la clave.
-    // Esto los convierte de nuevo en saltos de línea reales.
+    let raw = GOOGLE_CALENDAR_CREDENTIALS.trim();
+    // Si las credenciales vienen en Base64 (recomendado, no se rompe al pegar en Railway),
+    // las descodificamos. Detectamos Base64 porque no empieza por "{".
+    if (!raw.startsWith('{')) {
+      try { raw = Buffer.from(raw, 'base64').toString('utf-8'); } catch (e) {}
+    }
+    const credentials = JSON.parse(raw);
+    // Arreglar la clave privada por si los saltos de línea quedaron como texto "\n".
     if (credentials.private_key && credentials.private_key.includes('\\n')) {
       credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
     }
