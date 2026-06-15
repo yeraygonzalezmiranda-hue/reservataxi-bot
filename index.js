@@ -740,7 +740,12 @@ bot.onText(/\/delfestivo (.+)/, async (msg, match) => {
 
 bot.onText(/\/pendientes/, async (msg) => {
   if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const reservas = await Reserva.find({ estado: 'pendiente' }).sort({ fechaCreacion: -1 }).limit(10);
+  // Solo mostrar las pendientes cuyo servicio aún no ha pasado (margen de 1h).
+  const limite = new Date(Date.now() - 60 * 60 * 1000);
+  const reservas = await Reserva.find({
+    estado: 'pendiente',
+    $or: [ { fechaServicio: { $gte: limite } }, { fechaServicio: null }, { fechaServicio: { $exists: false } } ]
+  }).sort({ fechaServicio: 1 }).limit(10);
   if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '📋 No hay reservas pendientes.');
   let texto = `📋 *PENDIENTES (${reservas.length})*\n\n`;
   reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n   🆔 \`${r._id}\`\n\n`; });
@@ -750,7 +755,12 @@ bot.onText(/\/pendientes/, async (msg) => {
 
 bot.onText(/\/asignadas/, async (msg) => {
   if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const reservas = await Reserva.find({ estado: 'asignada' }).sort({ fechaCreacion: -1 }).limit(10);
+  // Solo mostrar las asignadas cuyo servicio aún no ha pasado (margen de 1h).
+  const limite = new Date(Date.now() - 60 * 60 * 1000);
+  const reservas = await Reserva.find({
+    estado: 'asignada',
+    $or: [ { fechaServicio: { $gte: limite } }, { fechaServicio: null }, { fechaServicio: { $exists: false } } ]
+  }).sort({ fechaServicio: 1 }).limit(10);
   if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '✅ No hay asignadas.');
   let texto = `✅ *ASIGNADAS (${reservas.length})*\n\n`;
   reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n   🆔 \`${r._id}\`\n\n`; });
