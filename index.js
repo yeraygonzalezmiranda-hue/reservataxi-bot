@@ -42,6 +42,12 @@ function getCalendarClient() {
   if (!GOOGLE_CALENDAR_CREDENTIALS || !GOOGLE_CALENDAR_ID) return null;
   try {
     const credentials = JSON.parse(GOOGLE_CALENDAR_CREDENTIALS);
+    // Arreglar la clave privada: al pegar el JSON en Railway, los saltos de línea
+    // se guardan como texto "\n" en vez de saltos reales, y eso rompe la clave.
+    // Esto los convierte de nuevo en saltos de línea reales.
+    if (credentials.private_key && credentials.private_key.includes('\\n')) {
+      credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
+    }
     const auth = new google.auth.GoogleAuth({
       credentials,
       scopes: ['https://www.googleapis.com/auth/calendar']
