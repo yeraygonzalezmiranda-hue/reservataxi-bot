@@ -172,6 +172,7 @@ const conductorSchema = new mongoose.Schema({
   chatId: { type: String, unique: true },
   nombre: String,
   licencia: String,
+  aprobado: { type: Boolean, default: false },
   activo: { type: Boolean, default: true },
   fechaRegistro: { type: Date, default: Date.now }
 });
@@ -267,6 +268,15 @@ mongoose.connect(MONGODB_URI).then(async () => {
   console.log('MongoDB conectado');
   await cargarConfig();
   await cargarFestivosIniciales();
+  // Migración: los conductores que ya existían antes de añadir el sistema de aprobación
+  // (campo 'aprobado' sin definir) se marcan como aprobados para que sigan recibiendo reservas.
+  try {
+    const res = await Conductor.updateMany(
+      { aprobado: { $exists: false } },
+      { $set: { aprobado: true } }
+    );
+    if (res.modifiedCount) console.log(`Conductores existentes aprobados automáticamente: ${res.modifiedCount}`);
+  } catch (e) { console.error('Error migrando conductores:', e.message); }
   iniciarRecordatorios();
   iniciarResumenMensual();
 }).catch(err => console.error('Error MongoDB:', err));
@@ -641,9 +651,21 @@ bot.onText(/\/start/, async (msg) => {
   try {
     const existente = await Conductor.findOne({ chatId });
     if (!existente) {
-      await Conductor.create({ chatId, nombre });
-      bot.sendMessage(chatId, `✅ *¡Registrado correctamente!*\n\nHola ${nombre}, ya recibirás las reservas disponibles.\n\n💡 Escribe /mideuda para ver tu comisión pendiente.`, { parse_mode: 'Markdown' });
-      bot.sendMessage(OWNER_CHAT_ID, `🆕 Nuevo conductor: *${nombre}* (ID: ${chatId})`, { parse_mode: 'Markdown' });
+      // Nuevo: se registra como PENDIENTE de aprobación. No recibe reservas hasta que el admin lo apruebe.
+      await Conductor.create({ chatId, nombre, aprobado: false, activo: false });
+      bot.sendMessage(chatId, `👋 Hola ${nombre}.\n\nHas solicitado acceso como conductor. Tu solicitud está *pendiente de aprobación* por el administrador.\n\nRecibirás un aviso cuando se apruebe. Gracias por tu paciencia.`, { parse_mode: 'Markdown' });
+      bot.sendMessage(OWNER_CHAT_ID,
+        `🆕 *Solicitud de acceso de conductor*\n\n👤 Nombre: *${nombre}*\n🆔 ID: ${chatId}\n\n¿Le das acceso al bot?`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard: [[
+            { text: '✅ Aprobar', callback_data: `aprobar_${chatId}` },
+            { text: '❌ Rechazar', callback_data: `rechazarcond_${chatId}` }
+          ]]}
+        }
+      );
+    } else if (!existente.aprobado) {
+      bot.sendMessage(chatId, `👋 Hola ${nombre}, tu solicitud sigue *pendiente de aprobación*. Te avisaremos cuando se apruebe.`, { parse_mode: 'Markdown' });
     } else {
       bot.sendMessage(chatId, `👋 Hola ${nombre}, ya estás registrado.\n\n💡 /mideuda para ver tu comisión.`);
     }
@@ -850,7 +872,11 @@ bot.onText(/\/conductores/, async (msg) => {
   let texto = `👥 *CONDUCTORES (${conductores.length})*\n\n`;
   conductores.forEach((c, i) => {
     const lic = c.licencia ? ` (lic. ${c.licencia}${String(c.licencia) === String(LICENCIA_PRIORITARIA) ? ' ⭐' : ''})` : '';
-    texto += `*${i+1}.* ${c.nombre}${lic} — ${c.activo ? '🟢 Activo' : '🔴 Inactivo'}\n`;
+    let estado;
+    if (!c.aprobado) estado = '⏳ Pendiente de aprobar';
+    else if (c.activo) estado = '🟢 Activo';
+    else estado = '🔴 Inactivo';
+    texto += `*${i+1}.* ${c.nombre}${lic} — ${estado}\n`;
   });
   texto += `\n💡 Para pausar/activar:\n/desactivar NombreConductor\n/activar NombreConductor\n\n🪪 Asignar licencia:\n/licencia NombreConductor Número`;
   bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
@@ -999,6 +1025,38 @@ bot.on('callback_query', async (query) => {
   const chatId = String(query.message.chat.id);
   const messageId = query.message.message_id;
   const data = query.data;
+
+  // Aprobar un conductor pendiente (solo el admin)
+  if (data.startsWith('aprobar_')) {
+    if (chatId !== OWNER_CHAT_ID) { bot.answerCallbackQuery(query.id, { text: 'Solo el administrador.' }); return; }
+    const condChatId = data.replace('aprobar_', '');
+    try {
+      const conductor = await Conductor.findOne({ chatId: condChatId });
+      if (!conductor) { bot.answerCallbackQuery(query.id, { text: 'Conductor no encontrado.' }); return; }
+      conductor.aprobado = true;
+      conductor.activo = true;
+      await conductor.save();
+      bot.editMessageText(`✅ Conductor *${conductor.nombre}* aprobado. Ya recibe reservas.`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+      try { bot.sendMessage(condChatId, `✅ *¡Acceso aprobado!*\n\nYa estás dado de alta como conductor. A partir de ahora recibirás las reservas disponibles.\n\n💡 /mideuda para ver tu comisión.`, { parse_mode: 'Markdown' }); } catch (e) {}
+      bot.answerCallbackQuery(query.id, { text: '✅ Aprobado' });
+    } catch (e) { console.error(e); bot.answerCallbackQuery(query.id, { text: 'Error.' }); }
+    return;
+  }
+
+  // Rechazar un conductor pendiente: se elimina del todo (solo el admin)
+  if (data.startsWith('rechazarcond_')) {
+    if (chatId !== OWNER_CHAT_ID) { bot.answerCallbackQuery(query.id, { text: 'Solo el administrador.' }); return; }
+    const condChatId = data.replace('rechazarcond_', '');
+    try {
+      const conductor = await Conductor.findOne({ chatId: condChatId });
+      const nombre = conductor ? conductor.nombre : 'Conductor';
+      await Conductor.deleteOne({ chatId: condChatId });
+      bot.editMessageText(`❌ Solicitud de *${nombre}* rechazada. No tiene acceso al bot.`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
+      try { bot.sendMessage(condChatId, `❌ Tu solicitud de acceso no ha sido aprobada. Si crees que es un error, contacta con el administrador.`); } catch (e) {}
+      bot.answerCallbackQuery(query.id, { text: 'Rechazado' });
+    } catch (e) { console.error(e); bot.answerCallbackQuery(query.id, { text: 'Error.' }); }
+    return;
+  }
 
   if (data.startsWith('aceptar_')) {
     const reservaId = data.replace('aceptar_', '');
@@ -1187,8 +1245,12 @@ function iniciarRecordatorios() {
       const sinAceptar = await Reserva.find({ estado: 'pendiente', avisoSinAceptarEnviado: false, fechaCreacion: { $lte: hace10min } });
       for (const reserva of sinAceptar) {
         bot.sendMessage(OWNER_CHAT_ID, `⚠️ Reserva sin aceptar — ${numReserva(reserva.numero)}\n\nLleva más de 10 minutos pendiente y ningún taxista la ha aceptado.\n\n${formatearReserva(reserva.datos, true)}\n\n🆔 ${reserva._id}`);
-        // Reenviar a los taxistas para que vuelva a sonar
-        try { await repartirReservaAConductores(reserva); } catch (e) {}
+        // A los 10 min ya no aplicamos prioridad: se envía a TODOS los conductores activos
+        // (incluido el prioritario) para que cualquiera pueda cogerla.
+        try {
+          const todos = await Conductor.find({ activo: true });
+          await enviarReservaA(reserva, todos);
+        } catch (e) {}
         reserva.avisoSinAceptarEnviado = true;
         await reserva.save();
       }
