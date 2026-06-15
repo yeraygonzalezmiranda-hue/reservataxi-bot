@@ -4,16 +4,20 @@ const mongoose = require('mongoose');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
+const { google } = require('googleapis');
 
 const TOKEN = process.env.BOT_TOKEN;
 const PORT = process.env.PORT || 3000;
 const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID || '898842399';
 const MONGODB_URI = process.env.MONGODB_URI;
 const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_KEY;
+const GOOGLE_CALENDAR_CREDENTIALS = process.env.GOOGLE_CALENDAR_CREDENTIALS; // JSON de la cuenta de servicio
+const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID; // p. ej. yeraygonzalezmiranda@gmail.com
 const COMISION_PORCENTAJE = 10;
 const MINIMO_HORAS_ANTELACION = 2; // valor inicial; el real se gestiona en cacheConfig.antelacion
 const LICENCIA_PRIORITARIA = '1374'; // Conductor con prioridad: recibe la reserva primero, sin comisión
 const MINUTOS_PRIORIDAD = 2; // Minutos que tiene el conductor prioritario antes de repartir al resto
+
 
 // Configuración ajustable en memoria (se rellena desde la BD al arrancar)
 let cacheConfig = { antelacion: 2, cancelacion: 0.5 };
@@ -28,6 +32,100 @@ if (!TOKEN) {
 // Hora actual en Canarias (el servidor de Railway funciona en UTC)
 function ahoraCanarias() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Atlantic/Canary' }));
+}
+
+// =================== GOOGLE CALENDAR ===================
+// Crea el cliente de Calendar a partir de las credenciales de la cuenta de servicio.
+let calendarClient = null;
+function getCalendarClient() {
+  if (calendarClient) return calendarClient;
+  if (!GOOGLE_CALENDAR_CREDENTIALS || !GOOGLE_CALENDAR_ID) return null;
+  try {
+    const credentials = JSON.parse(GOOGLE_CALENDAR_CREDENTIALS);
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: ['https://www.googleapis.com/auth/calendar']
+    });
+    calendarClient = google.calendar({ version: 'v3', auth });
+    return calendarClient;
+  } catch (e) {
+    console.error('Error al crear cliente de Calendar:', e.message);
+    return null;
+  }
+}
+
+// Crea un evento en el calendario para una reserva aceptada.
+// Devuelve el ID del evento creado, o null si no se pudo.
+async function crearEventoCalendario(reserva, nombreConductor) {
+  const calendar = getCalendarClient();
+  if (!calendar) {
+    console.log('Google Calendar no configurado (faltan credenciales o ID). Se omite.');
+    return null;
+  }
+  try {
+    const d = reserva.datos;
+    // Construir inicio y fin en horario de Canarias (Atlantic/Canary)
+    const inicio = new Date(`${d.fecha}T${d.hora}:00`);
+    if (isNaN(inicio)) { console.error('Fecha de reserva inválida para el calendario'); return null; }
+    const fin = new Date(inicio.getTime() + 60 * 60 * 1000); // duración 1 hora
+    const toISO = (fecha) => {
+      // Formato YYYY-MM-DDTHH:MM:SS (sin Z), con timeZone aparte
+      const p = (n) => String(n).padStart(2, '0');
+      return `${fecha.getFullYear()}-${p(fecha.getMonth()+1)}-${p(fecha.getDate())}T${p(fecha.getHours())}:${p(fecha.getMinutes())}:00`;
+    };
+
+    // Color: naranja (6) si va HACIA el aeropuerto, azul (7) si viene DESDE el aeropuerto
+    const destinoEsAeropuerto = /aeropuerto|airport|lpa/i.test(d.destino || '');
+    const origenEsAeropuerto = /aeropuerto|airport|lpa/i.test(d.origen || '');
+    let colorId = '8'; // gris por defecto
+    if (destinoEsAeropuerto) colorId = '6';      // ciudad → aeropuerto = naranja
+    else if (origenEsAeropuerto) colorId = '7';  // aeropuerto → ciudad = azul
+
+    const precio = d.precioEstimado ? `\nPrecio estimado: ${d.precioEstimado} €` : '';
+    const vuelo = d.vuelo ? `\nVuelo: ${d.vuelo}` : '';
+    const pax = d.pasajeros ? `\nPasajeros: ${d.pasajeros}` : '';
+    const obs = d.observaciones ? `\nObservaciones: ${d.observaciones}` : '';
+    const tel = d.telefono ? `\nTeléfono cliente: ${d.telefono}` : '';
+
+    const evento = {
+      summary: `🚖 ${numReserva(reserva.numero)} — ${d.origen} → ${d.destino}`,
+      description: `Cliente: ${d.nombre || '-'}${tel}\nConductor: ${nombreConductor || '-'}${precio}${vuelo}${pax}${obs}`,
+      start: { dateTime: toISO(inicio), timeZone: 'Atlantic/Canary' },
+      end: { dateTime: toISO(fin), timeZone: 'Atlantic/Canary' },
+      colorId,
+      reminders: {
+        useDefault: false,
+        overrides: [
+          { method: 'popup', minutes: 60 },
+          { method: 'popup', minutes: 15 }
+        ]
+      }
+    };
+
+    const res = await calendar.events.insert({
+      calendarId: GOOGLE_CALENDAR_ID,
+      requestBody: evento
+    });
+    console.log('Evento de calendario creado:', res.data.id);
+    return res.data.id;
+  } catch (e) {
+    console.error('Error creando evento en Calendar:', e.message);
+    try { bot.sendMessage(OWNER_CHAT_ID, `⚠️ No se pudo crear el evento en Google Calendar: ${e.message}`); } catch (err) {}
+    return null;
+  }
+}
+
+// Borra un evento del calendario (al cancelar una reserva).
+async function borrarEventoCalendario(eventoId) {
+  if (!eventoId) return;
+  const calendar = getCalendarClient();
+  if (!calendar) return;
+  try {
+    await calendar.events.delete({ calendarId: GOOGLE_CALENDAR_ID, eventId: eventoId });
+    console.log('Evento de calendario borrado:', eventoId);
+  } catch (e) {
+    console.error('Error borrando evento de Calendar:', e.message);
+  }
 }
 
 function cumpleAntelacion(fecha, hora) {
@@ -188,6 +286,7 @@ const reservaSchema = new mongoose.Schema({
   recordatorioEnviado: { type: Boolean, default: false },  // Recordatorio al taxista (1h antes)
   recordatorioClienteEnviado: { type: Boolean, default: false }, // Recordatorio al cliente (1h antes)
   avisoSinAceptarEnviado: { type: Boolean, default: false },      // Aviso al admin si nadie acepta en 10 min
+  eventoCalendarioId: String,                              // ID del evento en Google Calendar (para poder borrarlo si se cancela)
   fechaServicio: Date,
   fechaCreacion: { type: Date, default: Date.now }
 });
@@ -816,6 +915,8 @@ bot.onText(/\/cancelarreserva (.+)/, async (msg, match) => {
     if (reserva.estado === 'cancelada') return bot.sendMessage(OWNER_CHAT_ID, `⚠️ Esa reserva ya estaba cancelada.`);
     reserva.estado = 'cancelada';
     await reserva.save();
+    // Borrar el evento del calendario si existía
+    await borrarEventoCalendario(reserva.eventoCalendarioId);
     // Anular la comisión: una reserva cancelada no genera cobro al conductor
     const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
     let aviso = `❌ *Reserva cancelada*\n\n${formatearReserva(reserva.datos, true)}`;
@@ -1118,6 +1219,15 @@ bot.on('callback_query', async (query) => {
       // Solo se omite si la reserva no tiene correo.
       await enviarEmailConfirmacion(reserva.datos, reserva._id, conductorConLicencia, reserva.numero);
 
+      // Crear el evento en Google Calendar del administrador
+      try {
+        const eventoId = await crearEventoCalendario(reserva, conductorConLicencia);
+        if (eventoId) {
+          reserva.eventoCalendarioId = eventoId;
+          await reserva.save();
+        }
+      } catch (e) { console.error('No se pudo crear evento de calendario:', e.message); }
+
       bot.answerCallbackQuery(query.id, { text: '✅ ¡Reserva aceptada!' });
     } catch (err) {
       console.error(err);
@@ -1155,6 +1265,7 @@ bot.on('callback_query', async (query) => {
       if (!reserva || reserva.estado === 'cancelada') { bot.answerCallbackQuery(query.id, { text: 'Ya cancelada.' }); return; }
       reserva.estado = 'cancelada';
       await reserva.save();
+      await borrarEventoCalendario(reserva.eventoCalendarioId);
       // Anular la comisión del conductor: una reserva cancelada no genera cobro
       const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
       bot.editMessageText(`❌ *Reserva cancelada correctamente.*`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
@@ -1422,6 +1533,7 @@ app.get('/cancelar-confirmar', async (req, res) => {
     }
     reserva.estado = 'cancelada';
     await reserva.save();
+    await borrarEventoCalendario(reserva.eventoCalendarioId);
     // Anular comisión del conductor
     const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
     // Avisar al admin
