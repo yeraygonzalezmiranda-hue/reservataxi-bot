@@ -409,6 +409,11 @@ async function cargarDisponibles() {
   try {
     const r = await fetch('/api/conductores/servicios',{headers:{Authorization:'Bearer '+token()}});
     if (r.status===401){cerrarSesion();return;}
+    if (r.status===403){
+      const d = await r.json();
+      lista.innerHTML=`<div class="sin-servicios"><span class="emoji">⏸️</span>${d.error||'Tu cuenta está desactivada'}</div>`;
+      return;
+    }
     const servicios = await r.json();
     lista.innerHTML = servicios.length ? servicios.map(s=>cardServicio(s,true)).join('') : '<div class="sin-servicios"><span class="emoji">🟡</span>No hay servicios disponibles ahora mismo</div>';
   } catch(e) { lista.innerHTML='<div class="sin-servicios"><span class="emoji">❌</span>Error al cargar</div>'; }
