@@ -234,6 +234,7 @@ function iniciarAdmin() {
   document.getElementById('screen-admin').style.display='block';
   cargarStats();
   cargarReservas();
+  setTimeout(registrarPushAdmin, 1000);
 }
 
 // ====== TABS ======
@@ -431,6 +432,36 @@ async function pagarComision(chatId, nombre, btn) {
     await fetch('/api/admin/comisiones/pagar/'+chatId,{method:'POST',headers:{Authorization:'Bearer '+token()}});
     setTimeout(()=>{cargarComisiones();cargarStats();},500);
   } catch(e){btn.disabled=false;btn.textContent='Marcar pagada';}
+}
+
+// ====== PUSH ADMIN ======
+async function registrarPushAdmin() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  try {
+    const r = await fetch('/api/conductores/vapid-key');
+    const { publicKey } = await r.json();
+    if (!publicKey) return;
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') return;
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+    }
+    await fetch('/api/admin/push-subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token() }, body: JSON.stringify({ subscription: sub }) });
+  } catch(e) { console.log('Push admin error:', e); }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+}
+
+// ====== SERVICE WORKER ======
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(e => console.log('SW error:', e));
 }
 
 // ====== INICIO ======
