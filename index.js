@@ -1,5 +1,3 @@
-// v2.1
-const express = require('express');
 const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
 const mongoose = require('mongoose');
@@ -2147,7 +2145,11 @@ app.post('/api/admin/aceptar/:id', authAdmin, async (req, res) => {
 // Reasignar reserva
 app.post('/api/admin/reasignar/:id', authAdmin, async (req, res) => {
   try {
-    const reserva = await Reserva.findById(req.params.id);
+    const idParam = req.params.id;
+    if (!idParam || idParam === 'null' || idParam === 'undefined') {
+      return res.status(400).json({ error: 'ID de reserva no válido: ' + idParam });
+    }
+    const reserva = await Reserva.findById(idParam);
     if (!reserva) return res.status(404).json({ error: 'No encontrada' });
     const conductorAnterior = reserva.conductorAsignado;
     await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
