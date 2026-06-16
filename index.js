@@ -1275,12 +1275,8 @@ bot.on('callback_query', async (query) => {
   if (data.startsWith('aceptar_')) {
     const reservaId = data.replace('aceptar_', '');
     try {
-      const reserva = await Reserva.findOneAndUpdate(
-        { _id: reservaId, estado: 'pendiente' },
-        { $set: { estado: 'asignando' } },
-        { new: false }
-      );
-      if (!reserva) {
+      const reserva = await Reserva.findById(reservaId);
+      if (!reserva || reserva.estado !== 'pendiente') {
         bot.answerCallbackQuery(query.id, { text: '❌ Esta reserva ya fue asignada.', show_alert: true });
         return;
       }
@@ -1923,13 +1919,8 @@ app.get('/api/conductores/servicios', authConductor, async (req, res) => {
 // Aceptar servicio desde la app web
 app.post('/api/conductores/aceptar/:id', authConductor, async (req, res) => {
   try {
-    // Bloqueo atómico: solo asigna si sigue pendiente
-    const reserva = await Reserva.findOneAndUpdate(
-      { _id: req.params.id, estado: 'pendiente' },
-      { $set: { estado: 'asignando' } },
-      { new: false }
-    );
-    if (!reserva) return res.status(400).json({ error: 'Esta reserva ya no está disponible' });
+    const reserva = await Reserva.findById(req.params.id);
+    if (!reserva || reserva.estado !== 'pendiente') return res.status(400).json({ error: 'Esta reserva ya no está disponible' });
 
     const conductor = await Conductor.findById(req.conductor.id);
     if (!conductor) return res.status(404).json({ error: 'Conductor no encontrado' });
