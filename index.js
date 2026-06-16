@@ -1836,6 +1836,7 @@ app.post('/api/conductores/verificar-codigo', async (req, res) => {
 app.get('/api/conductores/servicios', authConductor, async (req, res) => {
   try {
     const conductor = await Conductor.findById(req.conductor.id);
+    if (!conductor || !conductor.activo) return res.status(403).json({ error: 'Tu cuenta está desactivada. Contacta con el administrador.' });
     const esPrioritario = String(conductor.licencia) === String(LICENCIA_PRIORITARIA);
     const ahora = new Date();
     const hace2min = new Date(ahora.getTime() - MINUTOS_PRIORIDAD * 60 * 1000);
@@ -2126,6 +2127,70 @@ app.post('/api/admin/cancelar/:id', authAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Error interno' }); }
 });
 
+// Asignar reserva directamente a un conductor específico
+app.post('/api/admin/asignar-conductor/:id', authAdmin, async (req, res) => {
+  try {
+    const { conductorId } = req.body;
+    const reserva = await Reserva.findById(req.params.id);
+    if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
+    const conductor = await Conductor.findById(conductorId);
+    if (!conductor) return res.status(404).json({ error: 'Conductor no encontrado' });
+
+    // Limpiar asignación anterior
+    const conductorAnterior = reserva.conductorAsignado;
+    await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
+    await borrarEventoCalendario(reserva.eventoCalendarioId);
+    for (const msg of (reserva.mensajesEnviados || [])) {
+      try { bot.editMessageText(`✅ Reserva asignada a ${conductor.nombre} por el administrador`, { chat_id: msg.chatId, message_id: msg.messageId }); } catch (e) {}
+    }
+    if (conductorAnterior && conductorAnterior !== conductor.chatId) {
+      try { bot.sendMessage(conductorAnterior, `🔄 La reserva del ${reserva.datos.fecha} a las ${reserva.datos.hora} ha sido reasignada a otro conductor.`); } catch (e) {}
+    }
+
+    // Asignar al nuevo conductor
+    reserva.estado = 'asignada';
+    reserva.conductorAsignado = conductor.chatId;
+    reserva.conductorNombre = conductor.nombre;
+    reserva.mensajesEnviados = [];
+    await reserva.save();
+
+    // Crear evento calendario
+    const eventoId = await crearEventoCalendario(reserva, conductor.nombre);
+    if (eventoId) { reserva.eventoCalendarioId = eventoId; await reserva.save(); }
+
+    // Registrar comisión
+    const esPrioritario = String(conductor.licencia) === String(LICENCIA_PRIORITARIA);
+    if (!esPrioritario && reserva.datos.precioEstimado) {
+      const precio = parseFloat(reserva.datos.precioEstimado);
+      await new Comision({
+        conductorChatId: conductor.chatId,
+        conductorNombre: conductor.nombre,
+        reservaId: reserva._id,
+        precioCarrera: precio,
+        comision: parseFloat((precio * COMISION_PORCENTAJE / 100).toFixed(2)),
+        mes: new Date().toISOString().slice(0, 7)
+      }).save();
+    }
+
+    // Avisar al conductor por Telegram
+    if (!conductor.chatId.startsWith('web_')) {
+      try { bot.sendMessage(conductor.chatId, `✅ *Se te ha asignado una reserva directamente*
+
+${formatearReserva(reserva.datos, false)}`, { parse_mode: 'Markdown' }); } catch (e) {}
+    }
+
+    // Email al cliente
+    await enviarEmailConfirmacion(reserva.datos, reserva._id, conductor.nombre, reserva.numero);
+
+    // Avisar al admin
+    bot.sendMessage(OWNER_CHAT_ID, `✅ *Reserva ${numReserva(reserva.numero)} asignada a ${conductor.nombre}*
+
+${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
+
+    res.json({ ok: true });
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Error interno' }); }
+});
+
 // Todos los conductores
 app.get('/api/admin/conductores', authAdmin, async (req, res) => {
   try {
@@ -2151,6 +2216,16 @@ app.post('/api/admin/conductores/:id/toggle-activo', authAdmin, async (req, res)
     if (!c) return res.status(404).json({ error: 'No encontrado' });
     c.activo = !c.activo;
     await c.save();
+    // Avisar al conductor por Telegram si tiene chatId real
+    if (c.chatId && !c.chatId.startsWith('web_')) {
+      try {
+        if (c.activo) {
+          bot.sendMessage(c.chatId, `✅ Tu cuenta ha sido *activada*. Ya vuelves a recibir reservas.`, { parse_mode: 'Markdown' });
+        } else {
+          bot.sendMessage(c.chatId, `⏸️ Tu cuenta ha sido *desactivada* temporalmente por el administrador. No recibirás reservas hasta que sea reactivada.`, { parse_mode: 'Markdown' });
+        }
+      } catch(e) {}
+    }
     res.json({ ok: true, activo: c.activo });
   } catch (e) { res.status(500).json({ error: 'Error interno' }); }
 });
