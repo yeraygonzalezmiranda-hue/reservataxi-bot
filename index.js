@@ -1705,6 +1705,46 @@ app.get('/cancelar-confirmar', async (req, res) => {
   }
 });
 
+// =================== VINCULAR TELEGRAM CON APP WEB ===================
+bot.onText(/\/vincular (.+)/, async (msg, match) => {
+  const chatId = String(msg.chat.id);
+  const email = (match[1] || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) {
+    return bot.sendMessage(chatId, '❌ Formato incorrecto. Usa:\n/vincular tu@email.com');
+  }
+  try {
+    // Buscar conductor por email con chatId web
+    const conductor = await Conductor.findOne({ email: new RegExp('^' + email + '$', 'i') });
+    if (!conductor) {
+      return bot.sendMessage(chatId, `❌ No encontré ninguna cuenta con el email *${email}*.
+
+Asegúrate de usar el mismo email con el que te registraste en la app.`, { parse_mode: 'Markdown' });
+    }
+    if (!conductor.aprobado) {
+      return bot.sendMessage(chatId, `⏳ Tu cuenta aún no ha sido aprobada por el administrador.`);
+    }
+    // Verificar que no esté ya vinculado con otro chatId de Telegram
+    if (conductor.chatId && !conductor.chatId.startsWith('web_') && conductor.chatId !== chatId) {
+      return bot.sendMessage(chatId, `⚠️ Esta cuenta ya está vinculada a otro Telegram.`);
+    }
+    // Vincular
+    const chatIdAnterior = conductor.chatId;
+    conductor.chatId = chatId;
+    await conductor.save();
+    bot.sendMessage(chatId, `✅ *¡Vinculado correctamente!*
+
+Hola ${conductor.nombre}, ya recibirás las reservas tanto por Telegram como por la app web.
+
+💡 Escribe /start para ver tus opciones.`, { parse_mode: 'Markdown' });
+    // Avisar al admin
+    bot.sendMessage(OWNER_CHAT_ID, `🔗 *${conductor.nombre}* ha vinculado su cuenta web con Telegram.
+📧 ${conductor.email}`, { parse_mode: 'Markdown' });
+  } catch (e) {
+    console.error('Error vinculando:', e.message);
+    bot.sendMessage(chatId, `❌ Error al vincular. Inténtalo de nuevo.`);
+  }
+});
+
 app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
 
 // =================== APP CONDUCTORES (PWA) ===================
@@ -2195,11 +2235,47 @@ app.post('/api/admin/asignar-conductor/:id', authAdmin, async (req, res) => {
       }).save();
     }
 
-    // Avisar al conductor por Telegram
+    // Avisar al conductor
     if (!conductor.chatId.startsWith('web_')) {
-      try { bot.sendMessage(conductor.chatId, `✅ *Se te ha asignado una reserva directamente*
+      // Conductor de Telegram: enviar mensaje completo
+      const d = reserva.datos;
+      const msgConductor = `✅ *Se te ha asignado una reserva directamente*
 
-${formatearReserva(reserva.datos, false)}`, { parse_mode: 'Markdown' }); } catch (e) {}
+` +
+        `🗓️ ${d.fecha}  ·  🕐 ${d.hora} h
+
+` +
+        `🟢 Recogida:
+   ${d.origen}
+` +
+        `🔴 Destino:
+   ${d.destino}
+
+` +
+        `👥 Pasajeros: ${d.pasajeros}
+` +
+        (d.precioEstimado ? `💰 Tarifa estimada: ${d.precioEstimado} €
+` : '') +
+        (d.vuelo ? `✈️ Vuelo: ${d.vuelo}
+` : '') +
+        (d.pasaporte ? `🛂 Pasaporte: ${d.pasaporte}
+` : '') +
+        (d.observaciones ? `📝 Notas: ${d.observaciones}
+` : '') +
+        `
+👤 Cliente: ${d.nombre}`;
+      try { bot.sendMessage(conductor.chatId, msgConductor, { parse_mode: 'Markdown' }); } catch (e) {}
+    } else {
+      // Conductor web: enviar push notification
+      try {
+        if (conductor.pushSubscription && VAPID_PUBLIC && VAPID_PRIVATE) {
+          const d = reserva.datos;
+          await webpush.sendNotification(JSON.parse(conductor.pushSubscription), JSON.stringify({
+            title: `✅ Reserva asignada — ${numReserva(reserva.numero)}`,
+            body: `${d.fecha} ${d.hora} · ${d.origen} → ${d.destino}`
+          }));
+        }
+      } catch(e) {}
     }
 
     // Email al cliente
