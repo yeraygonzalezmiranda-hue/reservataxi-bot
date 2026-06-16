@@ -1016,13 +1016,20 @@ bot.onText(/\/reasignar (.+)/, async (msg, match) => {
       try { bot.sendMessage(conductorAnterior, `🔄 *Servicio reasignado*\n\nEl servicio del ${reserva.datos.fecha} a las ${reserva.datos.hora} (${reserva.datos.origen} → ${reserva.datos.destino}) ha sido retirado y ofrecido a otros conductores.${comisionesBorradas.deletedCount > 0 ? '\n\n💰 La comisión de este servicio ya no se te cobrará.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
     }
 
+    // Editar los mensajes viejos de todos los conductores antes de reasignar
+    for (const msg of (reserva.mensajesEnviados || [])) {
+      try { bot.editMessageText(`🔄 *Servicio reasignado por el administrador*`, { chat_id: msg.chatId, message_id: msg.messageId, parse_mode: 'Markdown' }); } catch (e) {}
+    }
+
     reserva.estado = 'pendiente';
     reserva.conductorAsignado = null;
-    // No vaciamos mensajesEnviados: así los mensajes anteriores también se
-    // actualizarán a "Servicio ya asignado" cuando alguien acepte.
+    reserva.mensajesEnviados = []; // Limpiar para que todos vuelvan a recibir la reserva
     await reserva.save();
 
-    const numConductores = await repartirReservaAConductores(reserva);
+    // Al reasignar: enviar a TODOS a la vez excepto al conductor que la tenía
+    const todosActivos = await Conductor.find({ activo: true });
+    const sinAnterior = todosActivos.filter(c => String(c.chatId) !== String(conductorAnterior));
+    const numConductores = await enviarReservaA(reserva, sinAnterior);
     bot.sendMessage(OWNER_CHAT_ID, `🔄 Reserva reasignada\n\nVuelve a estar pendiente y se ha enviado a ${numConductores} conductor(es). La comisión pasará a quien la acepte.\n\n${formatearReserva(reserva.datos, true)}`);
   } catch (err) {
     console.error(err);
