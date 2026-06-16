@@ -2151,6 +2151,9 @@ app.post('/api/admin/cancelar/:id', authAdmin, async (req, res) => {
 app.post('/api/admin/asignar-conductor/:id', authAdmin, async (req, res) => {
   try {
     const { conductorId } = req.body;
+    if (!conductorId || conductorId === 'null' || conductorId === 'undefined') {
+      return res.status(400).json({ error: 'ID de conductor no válido' });
+    }
     const reserva = await Reserva.findById(req.params.id);
     if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
     const conductor = await Conductor.findById(conductorId);
@@ -2216,7 +2219,7 @@ app.get('/api/admin/conductores', authAdmin, async (req, res) => {
   try {
     const conductores = await Conductor.find().sort({ fechaRegistro: -1 }).select('-password -codigoVerificacion -codigoExpira -pushSubscription');
     res.json(conductores.map(c => ({
-      id: c._id,
+      id: c._id.toString(),
       nombre: c.nombre,
       licencia: c.licencia,
       plaza: c.plaza,
