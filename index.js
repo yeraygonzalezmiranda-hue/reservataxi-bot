@@ -2091,7 +2091,7 @@ app.get('/api/admin/reservas', authAdmin, async (req, res) => {
     res.json({
       total,
       reservas: reservas.map(r => ({
-        id: r._id,
+        id: r._id.toString(),
         numero: numReserva(r.numero),
         estado: r.estado,
         fecha: r.datos.fecha,
