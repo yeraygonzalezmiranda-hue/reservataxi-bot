@@ -2117,9 +2117,11 @@ app.post('/api/admin/cancelar/:id', authAdmin, async (req, res) => {
     await reserva.save();
     await borrarEventoCalendario(reserva.eventoCalendarioId);
     await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
+    const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
     if (reserva.conductorAsignado) {
-      try { bot.sendMessage(reserva.conductorAsignado, `❌ Servicio cancelado por el administrador\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}`); } catch (e) {}
+      try { bot.sendMessage(reserva.conductorAsignado, `❌ *Servicio cancelado por el administrador*\n\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}${comisionesBorradas.deletedCount > 0 ? '\n\n💰 La comisión ha sido anulada.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
     }
+    try { bot.sendMessage(OWNER_CHAT_ID, `❌ *Reserva cancelada desde el panel admin*\n\n${formatearReserva(reserva.datos, true)}${comisionesBorradas.deletedCount > 0 ? '\n💰 Comisión anulada.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: 'Error interno' }); }
 });
