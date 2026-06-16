@@ -2282,7 +2282,7 @@ app.post('/api/admin/asignar-conductor/:id', authAdmin, async (req, res) => {
 ${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
 
     res.json({ ok: true });
-  } catch (e) { console.error(e); res.status(500).json({ error: 'Error interno' }); }
+  } catch (e) { console.error('Error asignar-conductor:', e.message); res.status(500).json({ error: e.message || 'Error interno' }); }
 });
 
 // Todos los conductores
