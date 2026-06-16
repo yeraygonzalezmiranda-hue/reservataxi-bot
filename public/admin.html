@@ -365,7 +365,12 @@ document.getElementById('modal').addEventListener('click',e=>{if(e.target===e.cu
 let reservaReasignarId = null;
 
 function abrirModalReasignar(id) {
-  reservaReasignarId = id;
+  if (!id || id === 'null' || id === 'undefined') {
+    alert('Error: ID de reserva no válido. Recarga la página e inténtalo de nuevo.');
+    return;
+  }
+  reservaReasignarId = String(id);
+  document.getElementById('modal-reasignar').dataset.reservaId = String(id);
   document.getElementById('lista-conductores-modal').style.display='none';
   document.getElementById('lista-conductores-modal').innerHTML='';
   document.getElementById('modal-reasignar').style.display='flex';
@@ -373,14 +378,16 @@ function abrirModalReasignar(id) {
 
 function cerrarModalReasignar() {
   document.getElementById('modal-reasignar').style.display='none';
+  document.getElementById('modal-reasignar').dataset.reservaId = '';
   reservaReasignarId = null;
 }
-document.getElementById('modal-reasignar').addEventListener('click',e=>{if(e.target===e.currentTarget)cerrarModalReasignar();});
+// Eliminado: cerrar al hacer clic fuera — causaba pérdida del ID accidentalmente
+// document.getElementById('modal-reasignar').addEventListener('click',e=>{if(e.target===e.currentTarget)cerrarModalReasignar();});
 
 async function reasignarPendiente() {
-  const idReserva = reservaReasignarId;
-  if (!idReserva || idReserva === 'null' || idReserva === 'undefined') {
-    alert('Error: ID de reserva no válido');
+  const idReserva = reservaReasignarId || document.getElementById('modal-reasignar').dataset.reservaId;
+  if (!idReserva || idReserva === 'null' || idReserva === 'undefined' || idReserva === '') {
+    alert('Error: ID de reserva no válido. Cierra este modal, recarga la página e inténtalo de nuevo.');
     return;
   }
   document.getElementById('modal-reasignar').style.display='none';
@@ -415,7 +422,7 @@ async function mostrarListaConductores() {
 
 async function asignarAConductor(conductorId, nombre) {
   // Guardar el ID ANTES de cualquier operación que pueda limpiar el modal
-  const idReserva = reservaReasignarId;
+  const idReserva = reservaReasignarId || document.getElementById('modal-reasignar').dataset.reservaId;
   if (!idReserva || idReserva === 'null') { alert('Error: no hay reserva seleccionada'); return; }
   if (!conductorId || conductorId === 'null') { alert('Error: no hay conductor seleccionado'); return; }
   if (!confirm(`¿Asignar esta reserva a ${nombre}?`)) return;
