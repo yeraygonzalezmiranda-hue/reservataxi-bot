@@ -304,7 +304,7 @@ function reservaCard(r) {
   const esAsignada=r.estado==='asignada';
   const accionesBtns=[];
   if(esPendiente) accionesBtns.push(`<button class="btn-accion verde" onclick="aceptarReserva('${r.id}',this)">✅ Aceptar</button>`);
-  if(esPendiente||esAsignada) accionesBtns.push(`<button class="btn-accion naranja" onclick="abrirModalReasignar('${r.id}')">🔄 Reasignar</button>`);
+  if(esPendiente||esAsignada) accionesBtns.push(`<button class="btn-accion naranja" onclick="abrirModalReasignar('${r.id||r._id}')">🔄 Reasignar</button>`);
   if(r.estado!=='cancelada') accionesBtns.push(`<button class="btn-accion rojo" onclick="confirmar('cancelar','${r.id}','Cancelar ${r.numero}','¿Estás seguro de que quieres cancelar esta reserva?',this)">❌ Cancelar</button>`);
   return `<div class="reserva-card" id="rcard-${r.id}">
     <div class="reserva-header">
@@ -379,9 +379,10 @@ document.getElementById('modal-reasignar').addEventListener('click',e=>{if(e.tar
 
 async function reasignarPendiente() {
   if (!reservaReasignarId) return;
+  const idReserva = reservaReasignarId;
   cerrarModalReasignar();
   try {
-    await fetch('/api/admin/reasignar/'+reservaReasignarId,{method:'POST',headers:{Authorization:'Bearer '+token()}});
+    await fetch('/api/admin/reasignar/'+idReserva,{method:'POST',headers:{Authorization:'Bearer '+token()}});
     setTimeout(()=>{cargarStats();cargarReservas();},800);
   } catch(e){alert('Error');}
 }
@@ -409,9 +410,10 @@ async function mostrarListaConductores() {
 async function asignarAConductor(conductorId, nombre) {
   if (!reservaReasignarId) return;
   if (!confirm(`¿Asignar esta reserva a ${nombre}?`)) return;
+  const idReserva = reservaReasignarId; // Guardar antes de cerrar el modal
   cerrarModalReasignar();
   try {
-    const r = await fetch('/api/admin/asignar-conductor/'+reservaReasignarId,{
+    const r = await fetch('/api/admin/asignar-conductor/'+idReserva,{
       method:'POST',
       headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},
       body:JSON.stringify({conductorId})
