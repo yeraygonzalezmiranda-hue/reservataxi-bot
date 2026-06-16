@@ -307,11 +307,17 @@ async function solicitarCodigo() {
     const d = await r.json();
     if (!r.ok) { mostrarMsg('msg-login', d.error||'Error','err'); btn.disabled=false; btn.textContent='Continuar →'; return; }
     emailLogin = email;
+    sessionStorage.setItem('loginEmail', email);
     document.getElementById('form-login').classList.remove('active');
     document.getElementById('form-codigo').classList.add('active');
     document.getElementById('c1').focus();
     btn.disabled=false; btn.textContent='Continuar →';
   } catch(e) { mostrarMsg('msg-login','Error de conexión','err'); btn.disabled=false; btn.textContent='Continuar →'; }
+}
+
+// Recuperar email al cargar si hay sesión pendiente
+if (sessionStorage.getItem('loginEmail')) {
+  emailLogin = sessionStorage.getItem('loginEmail');
 }
 
 function avanzarCodigo(input, nextId) {
