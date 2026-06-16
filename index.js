@@ -1397,7 +1397,7 @@ bot.on('callback_query', async (query) => {
       bot.editMessageText(`✅ Conductor aprobado: ${conductor.nombre}`, { chat_id: query.message.chat.id, message_id: query.message.message_id });
       if (conductor.email && BREVO_API_KEY) {
         await enviarEmailBrevo({
-          sender: { name: 'Reserva Taxi Las Palmas', email: 'reservas@taxilaspalmasdegrancanaria.com' },
+          sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
           to: [{ email: conductor.email, name: conductor.nombre }],
           subject: '✅ Tu cuenta ha sido aprobada',
           htmlContent: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px"><h2 style="color:#f5c400">🚖 ¡Bienvenido, ${conductor.nombre}!</h2><p>Tu cuenta de conductor ha sido aprobada. Ya puedes entrar en la app:</p><a href="https://reservataxilaspalmas.com/conductores" style="display:inline-block;background:#f5c400;color:#000;padding:12px 24px;border-radius:8px;font-weight:bold;text-decoration:none;margin-top:16px">Entrar a la app</a></div>`
@@ -1416,7 +1416,7 @@ bot.on('callback_query', async (query) => {
       bot.editMessageText(`❌ Conductor rechazado: ${conductor.nombre}`, { chat_id: query.message.chat.id, message_id: query.message.message_id });
       if (conductor.email && BREVO_API_KEY) {
         await enviarEmailBrevo({
-          sender: { name: 'Reserva Taxi Las Palmas', email: 'reservas@taxilaspalmasdegrancanaria.com' },
+          sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
           to: [{ email: conductor.email, name: conductor.nombre }],
           subject: 'Solicitud de registro no aprobada',
           htmlContent: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px"><h2 style="color:#f5c400">Reserva Taxi Las Palmas</h2><p>Hola ${conductor.nombre}, lamentablemente tu solicitud de registro no ha sido aprobada. Para más información contacta al administrador.</p></div>`
@@ -1721,7 +1721,7 @@ function authConductor(req, res, next) {
 async function enviarCodigoVerificacion(email, nombre, codigo) {
   if (!BREVO_API_KEY) return;
   await enviarEmailBrevo({
-    sender: { name: 'Reserva Taxi Las Palmas', email: 'reservas@taxilaspalmasdegrancanaria.com' },
+    sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
     to: [{ email, name: nombre }],
     subject: 'Código de verificación — App Conductores',
     htmlContent: `
@@ -2122,7 +2122,7 @@ app.post('/api/admin/conductores/:id/aprobar', authAdmin, async (req, res) => {
     if (c.email && BREVO_API_KEY) {
       try {
         await enviarEmailBrevo({
-          sender: { name: 'Reserva Taxi Las Palmas', email: 'reservas@taxilaspalmasdegrancanaria.com' },
+          sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
           to: [{ email: c.email, name: c.nombre }],
           subject: '✅ Tu cuenta ha sido aprobada',
           htmlContent: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px"><h2 style="color:#f5c400">🚖 ¡Bienvenido, ${c.nombre}!</h2><p>Tu cuenta ha sido aprobada. Ya puedes entrar en la app:</p><a href="https://reservataxilaspalmas.com/conductores" style="display:inline-block;background:#f5c400;color:#000;padding:12px 24px;border-radius:8px;font-weight:bold;text-decoration:none;margin-top:16px">Entrar a la app</a></div>`
