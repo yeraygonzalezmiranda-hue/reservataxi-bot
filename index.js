@@ -1174,6 +1174,18 @@ async function enviarReservaA(reserva, conductores) {
     const d = reserva.datos;
     await enviarPushAConductores(conductores, '🚖 Nueva reserva disponible', `${d.fecha} ${d.hora} · ${d.origen} → ${d.destino}`);
   } catch (e) {}
+  // Notificación push al admin
+  try {
+    if (adminPushSubscription && VAPID_PUBLIC && VAPID_PRIVATE) {
+      const d = reserva.datos;
+      await webpush.sendNotification(adminPushSubscription, JSON.stringify({
+        title: `🚖 Nueva reserva — ${numReserva(reserva.numero)}`,
+        body: `${d.fecha} ${d.hora} · ${d.origen} → ${d.destino} · ${d.nombre}`
+      }));
+    }
+  } catch (e) {
+    if (e.statusCode === 410) adminPushSubscription = null;
+  }
   return mensajesEnviados.length;
 }
 
@@ -1984,6 +1996,9 @@ app.get('/api/conductores/vapid-key', (req, res) => {
 
 // =================== PANEL ADMIN WEB ===================
 
+// Guardar suscripción push del admin
+let adminPushSubscription = null;
+
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'taxilpa2026';
 const ADMIN_JWT_SECRET = process.env.JWT_SECRET || 'taxi_lpa_secret_2026';
 
@@ -1997,6 +2012,14 @@ function authAdmin(req, res, next) {
     next();
   } catch (e) { return res.status(401).json({ error: 'Token inválido' }); }
 }
+
+// Push subscribe admin
+app.post('/api/admin/push-subscribe', authAdmin, async (req, res) => {
+  try {
+    adminPushSubscription = req.body.subscription;
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
 
 // Login admin
 app.post('/api/admin/login', (req, res) => {
