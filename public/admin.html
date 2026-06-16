@@ -378,13 +378,18 @@ function cerrarModalReasignar() {
 document.getElementById('modal-reasignar').addEventListener('click',e=>{if(e.target===e.currentTarget)cerrarModalReasignar();});
 
 async function reasignarPendiente() {
-  if (!reservaReasignarId) return;
+  if (!reservaReasignarId || reservaReasignarId === 'null' || reservaReasignarId === 'undefined') {
+    alert('Error: ID de reserva no válido');
+    return;
+  }
   const idReserva = reservaReasignarId;
   cerrarModalReasignar();
   try {
-    await fetch('/api/admin/reasignar/'+idReserva,{method:'POST',headers:{Authorization:'Bearer '+token()}});
+    const r = await fetch('/api/admin/reasignar/'+idReserva,{method:'POST',headers:{Authorization:'Bearer '+token()}});
+    const d = await r.json();
+    if (!r.ok) { alert(d.error||'Error al reasignar'); return; }
     setTimeout(()=>{cargarStats();cargarReservas();},800);
-  } catch(e){alert('Error');}
+  } catch(e){alert('Error de conexión');}
 }
 
 async function mostrarListaConductores() {
