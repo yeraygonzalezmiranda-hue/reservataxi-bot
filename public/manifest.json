@@ -1,0 +1,17 @@
+{
+  "name": "Conductores — Reserva Taxi LPA",
+  "short_name": "Taxi LPA",
+  "description": "App de conductores para Reserva Taxi Las Palmas de Gran Canaria",
+  "start_url": "/conductores",
+  "display": "standalone",
+  "background_color": "#0f0f0f",
+  "theme_color": "#111111",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64",
+      "type": "image/x-icon"
+    }
+  ]
+}
