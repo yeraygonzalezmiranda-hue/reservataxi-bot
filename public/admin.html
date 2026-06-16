@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#111111">
+  <title>Admin — Reserva Taxi Las Palmas</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{--amarillo:#f5c400;--bg:#0f0f0f;--card:#1a1a1a;--border:#2a2a2a;--text:#f0f0f0;--muted:#888;--verde:#4caf50;--rojo:#e53935;--azul:#2196f3;--naranja:#ff9800}
+    body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+    /* LOGIN */
+    .login-box{max-width:360px;margin:80px auto;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:32px 24px;text-align:center}
+    .login-box .emoji{font-size:48px;display:block;margin-bottom:12px}
+    .login-box h1{font-size:20px;color:var(--amarillo);margin-bottom:4px}
+    .login-box p{font-size:13px;color:var(--muted);margin-bottom:24px}
+    .field{margin-bottom:14px;text-align:left}
+    .field label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+    .field input{width:100%;background:#111;border:1px solid var(--border);color:var(--text);padding:12px 14px;border-radius:10px;font-size:15px;outline:none;transition:border .2s}
+    .field input:focus{border-color:var(--amarillo)}
+    .btn-primary{width:100%;background:var(--amarillo);color:#000;border:none;padding:13px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;transition:opacity .2s}
+    .btn-primary:hover{opacity:.9}
+    .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+    .msg{margin-top:10px;padding:11px;border-radius:10px;font-size:13px;display:none}
+    .msg.err{background:#3a1a1a;color:#e57373;display:block}
+
+    /* HEADER */
+    .header{background:#111;border-bottom:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+    .header-logo{font-size:15px;font-weight:700;color:var(--amarillo)}
+    .header-right{display:flex;align-items:center;gap:10px}
+    .btn-salir{background:none;border:1px solid var(--border);color:var(--muted);padding:6px 12px;border-radius:8px;cursor:pointer;font-size:12px}
+    .btn-salir:hover{border-color:var(--rojo);color:var(--rojo)}
+
+    /* TABS */
+    .tabs{display:flex;background:#111;border-bottom:1px solid var(--border);overflow-x:auto}
+    .tab{flex:1;min-width:90px;padding:13px 8px;text-align:center;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s}
+    .tab.active{color:var(--amarillo);border-bottom-color:var(--amarillo)}
+
+    /* LAYOUT */
+    .content{padding:16px;max-width:900px;margin:0 auto}
+    .page{display:none}
+    .page.active{display:block}
+
+    /* STATS */
+    .stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px}
+    @media(min-width:600px){.stats-grid{grid-template-columns:repeat(4,1fr)}}
+    .stat-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center}
+    .stat-card .num{font-size:32px;font-weight:700;color:var(--amarillo)}
+    .stat-card .lbl{font-size:12px;color:var(--muted);margin-top:4px}
+
+    /* FILTROS */
+    .filtros{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+    .filtro{padding:7px 14px;border-radius:20px;border:1px solid var(--border);background:none;color:var(--muted);font-size:12px;cursor:pointer;transition:all .2s}
+    .filtro.active{background:var(--amarillo);color:#000;border-color:var(--amarillo)}
+    .btn-refresh{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px}
+
+    /* CARDS RESERVA */
+    .reserva-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:15px;margin-bottom:12px}
+    .reserva-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+    .reserva-num{font-size:12px;font-weight:700;color:var(--amarillo);background:#2a2000;padding:3px 10px;border-radius:20px}
+    .reserva-fecha{font-size:13px;color:var(--muted)}
+    .badge{font-size:11px;padding:3px 10px;border-radius:20px;font-weight:700}
+    .badge.pendiente{background:#2a1a00;color:var(--naranja)}
+    .badge.asignada{background:#1a2d1a;color:#7dd87d}
+    .badge.cancelada{background:#2d1a1a;color:#e57373}
+    .badge.completada{background:#1a1a2d;color:#7d9dd8}
+    .reserva-ruta{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+    .parada{display:flex;align-items:flex-start;gap:8px;font-size:14px}
+    .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:5px}
+    .dot.verde{background:var(--verde)}
+    .dot.rojo{background:var(--rojo)}
+    .reserva-meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+    .chip{font-size:12px;color:var(--muted);background:#222;padding:3px 9px;border-radius:20px}
+    .chip strong{color:var(--text)}
+    .reserva-notas{font-size:12px;color:var(--muted);background:#222;border-radius:8px;padding:8px 10px;margin-bottom:10px}
+    .reserva-acciones{display:flex;gap:8px;flex-wrap:wrap}
+    .btn-accion{flex:1;min-width:80px;padding:9px 12px;border-radius:10px;border:none;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .2s}
+    .btn-accion:disabled{opacity:.4;cursor:not-allowed}
+    .btn-accion.verde{background:var(--verde);color:#fff}
+    .btn-accion.naranja{background:var(--naranja);color:#fff}
+    .btn-accion.rojo{background:var(--rojo);color:#fff}
+    .conductor-asignado{font-size:12px;color:var(--muted);margin-bottom:8px}
+    .conductor-asignado strong{color:var(--verde)}
+
+    /* CONDUCTORES */
+    .conductor-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:15px;margin-bottom:12px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+    .conductor-avatar{width:44px;height:44px;background:#2a2000;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+    .conductor-info{flex:1;min-width:0}
+    .conductor-info .nombre{font-size:15px;font-weight:700}
+    .conductor-info .detalle{font-size:12px;color:var(--muted);margin-top:2px}
+    .conductor-acciones{display:flex;gap:6px;flex-shrink:0}
+    .btn-sm{padding:7px 12px;border-radius:8px;border:none;font-size:12px;font-weight:600;cursor:pointer;transition:opacity .2s}
+    .btn-sm:disabled{opacity:.4}
+    .btn-sm.verde{background:#1a3a1a;color:#7dd87d;border:1px solid #2d4a2d}
+    .btn-sm.rojo{background:#3a1a1a;color:#e57373;border:1px solid #4a2d2d}
+    .btn-sm.amarillo{background:#2a2000;color:var(--amarillo);border:1px solid #3a3000}
+    .badge-pendiente-aprobacion{font-size:11px;background:#2a1a00;color:var(--naranja);padding:2px 8px;border-radius:10px;margin-left:6px}
+
+    /* COMISIONES */
+    .comision-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:15px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+    .comision-info .nombre{font-size:15px;font-weight:700}
+    .comision-info .detalle{font-size:12px;color:var(--muted);margin-top:2px}
+    .comision-derecha{text-align:right}
+    .comision-derecha .importe{font-size:24px;font-weight:700;color:var(--rojo)}
+    .comision-derecha .servicios{font-size:12px;color:var(--muted)}
+
+    /* LOADING */
+    .spinner{display:inline-block;width:20px;height:20px;border:2px solid #333;border-top-color:var(--amarillo);border-radius:50%;animation:spin .7s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .loading-center{display:flex;justify-content:center;padding:40px}
+    .sin-datos{text-align:center;padding:40px 20px;color:var(--muted)}
+    .sin-datos .emoji{font-size:36px;display:block;margin-bottom:10px}
+
+    /* MODAL CONFIRMACIÓN */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px}
+    .modal{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:360px;width:100%;text-align:center}
+    .modal h3{font-size:18px;margin-bottom:10px}
+    .modal p{font-size:14px;color:var(--muted);margin-bottom:20px;line-height:1.5}
+    .modal-btns{display:flex;gap:10px}
+    .modal-btns button{flex:1;padding:12px;border-radius:10px;border:none;font-size:14px;font-weight:700;cursor:pointer}
+    .modal-btns .confirmar{background:var(--rojo);color:#fff}
+    .modal-btns .cancelar{background:#222;color:var(--muted)}
+
+    .section-title{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="screen-login">
+  <div class="login-box">
+    <span class="emoji">🔐</span>
+    <h1>Panel Admin</h1>
+    <p>Reserva Taxi Las Palmas</p>
+    <div class="field"><label>Contraseña de administrador</label><input type="password" id="admin-pwd" placeholder="••••••••" onkeydown="if(event.key==='Enter')loginAdmin()"></div>
+    <button class="btn-primary" onclick="loginAdmin()">Entrar</button>
+    <div class="msg err" id="msg-login" style="display:none"></div>
+  </div>
+</div>
+
+<!-- APP ADMIN -->
+<div id="screen-admin" style="display:none">
+  <div class="header">
+    <span class="header-logo">🚖 Admin Panel</span>
+    <div class="header-right">
+      <button class="btn-salir" onclick="cerrarSesion()">Salir</button>
+    </div>
+  </div>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('reservas')">📋 Reservas</div>
+    <div class="tab" onclick="switchTab('conductores')">👥 Conductores</div>
+    <div class="tab" onclick="switchTab('comisiones')">💰 Comisiones</div>
+  </div>
+  <div class="content">
+
+    <!-- RESERVAS -->
+    <div class="page active" id="page-reservas">
+      <div class="stats-grid" id="stats-grid"><div class="loading-center" style="grid-column:1/-1"><div class="spinner"></div></div></div>
+      <div class="section-title">
+        <span>Reservas</span>
+        <button class="btn-refresh" onclick="cargarReservas()">🔄</button>
+      </div>
+      <div class="filtros">
+        <button class="filtro active" onclick="setFiltro('todas',this)">Todas</button>
+        <button class="filtro" onclick="setFiltro('pendiente',this)">🟡 Pendientes</button>
+        <button class="filtro" onclick="setFiltro('asignada',this)">🟢 Asignadas</button>
+        <button class="filtro" onclick="setFiltro('cancelada',this)">🔴 Canceladas</button>
+      </div>
+      <div id="lista-reservas"><div class="loading-center"><div class="spinner"></div></div></div>
+    </div>
+
+    <!-- CONDUCTORES -->
+    <div class="page" id="page-conductores">
+      <div class="section-title">
+        <span>Conductores registrados</span>
+        <button class="btn-refresh" onclick="cargarConductores()">🔄</button>
+      </div>
+      <div id="lista-conductores"><div class="loading-center"><div class="spinner"></div></div></div>
+    </div>
+
+    <!-- COMISIONES -->
+    <div class="page" id="page-comisiones">
+      <div class="section-title">
+        <span>Comisiones pendientes de cobro</span>
+        <button class="btn-refresh" onclick="cargarComisiones()">🔄</button>
+      </div>
+      <div id="lista-comisiones"><div class="loading-center"><div class="spinner"></div></div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal" style="display:none">
+  <div class="modal">
+    <h3 id="modal-titulo"></h3>
+    <p id="modal-texto"></p>
+    <div class="modal-btns">
+      <button class="cancelar" onclick="cerrarModal()">Cancelar</button>
+      <button class="confirmar" id="modal-confirmar">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let filtroActual = 'todas';
+
+function token() { return localStorage.getItem('admin_token'); }
+
+// ====== AUTH ======
+async function loginAdmin() {
+  const pwd = document.getElementById('admin-pwd').value;
+  if (!pwd) return;
+  const btn = document.querySelector('#screen-login .btn-primary');
+  btn.disabled=true; btn.textContent='Entrando...';
+  try {
+    const r = await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})});
+    const d = await r.json();
+    if (!r.ok) {
+      document.getElementById('msg-login').textContent=d.error||'Contraseña incorrecta';
+      document.getElementById('msg-login').style.display='block';
+      btn.disabled=false; btn.textContent='Entrar'; return;
+    }
+    localStorage.setItem('admin_token', d.token);
+    iniciarAdmin();
+  } catch(e) { btn.disabled=false; btn.textContent='Entrar'; }
+}
+
+function cerrarSesion() { localStorage.removeItem('admin_token'); location.reload(); }
+
+function iniciarAdmin() {
+  document.getElementById('screen-login').style.display='none';
+  document.getElementById('screen-admin').style.display='block';
+  cargarStats();
+  cargarReservas();
+}
+
+// ====== TABS ======
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['reservas','conductores','comisiones'][i]===tab));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-'+tab).classList.add('active');
+  if(tab==='reservas'){cargarStats();cargarReservas();}
+  else if(tab==='conductores') cargarConductores();
+  else if(tab==='comisiones') cargarComisiones();
+}
+
+// ====== STATS ======
+async function cargarStats() {
+  try {
+    const r = await fetch('/api/admin/stats',{headers:{Authorization:'Bearer '+token()}});
+    if(r.status===401){cerrarSesion();return;}
+    const d = await r.json();
+    document.getElementById('stats-grid').innerHTML=`
+      <div class="stat-card"><div class="num" style="color:var(--naranja)">${d.pendientes}</div><div class="lbl">Pendientes</div></div>
+      <div class="stat-card"><div class="num" style="color:var(--verde)">${d.asignadas}</div><div class="lbl">Asignadas</div></div>
+      <div class="stat-card"><div class="num">${d.hoy}</div><div class="lbl">Hoy</div></div>
+      <div class="stat-card"><div class="num" style="color:var(--rojo)">${d.comisionesPendientes}€</div><div class="lbl">Por cobrar</div></div>`;
+  } catch(e){}
+}
+
+// ====== RESERVAS ======
+function setFiltro(filtro, btn) {
+  filtroActual=filtro;
+  document.querySelectorAll('.filtro').forEach(f=>f.classList.remove('active'));
+  btn.classList.add('active');
+  cargarReservas();
+}
+
+async function cargarReservas() {
+  const lista=document.getElementById('lista-reservas');
+  lista.innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r=await fetch(`/api/admin/reservas?estado=${filtroActual}`,{headers:{Authorization:'Bearer '+token()}});
+    if(r.status===401){cerrarSesion();return;}
+    const d=await r.json();
+    if(!d.reservas.length){lista.innerHTML='<div class="sin-datos"><span class="emoji">📋</span>Sin reservas</div>';return;}
+    lista.innerHTML=d.reservas.map(reservaCard).join('');
+  } catch(e){lista.innerHTML='<div class="sin-datos"><span class="emoji">❌</span>Error al cargar</div>';}
+}
+
+function reservaCard(r) {
+  const fecha=r.fecha?new Date(r.fecha+'T'+r.hora).toLocaleDateString('es-ES',{weekday:'short',day:'numeric',month:'short'}):'-';
+  const conductorHtml=r.conductor?`<div class="conductor-asignado">🚖 Conductor: <strong>${r.conductor}</strong></div>`:'';
+  const notasHtml=r.notas?`<div class="reserva-notas">📝 ${r.notas}</div>`:'';
+  const esPendiente=r.estado==='pendiente';
+  const esAsignada=r.estado==='asignada';
+  const accionesBtns=[];
+  if(esPendiente) accionesBtns.push(`<button class="btn-accion verde" onclick="aceptarReserva('${r.id}',this)">✅ Aceptar</button>`);
+  if(esPendiente||esAsignada) accionesBtns.push(`<button class="btn-accion naranja" onclick="confirmar('reasignar','${r.id}','Reasignar ${r.numero}','¿Reasignar esta reserva? Se enviará a todos los conductores disponibles.',this)">🔄 Reasignar</button>`);
+  if(r.estado!=='cancelada') accionesBtns.push(`<button class="btn-accion rojo" onclick="confirmar('cancelar','${r.id}','Cancelar ${r.numero}','¿Estás seguro de que quieres cancelar esta reserva?',this)">❌ Cancelar</button>`);
+  return `<div class="reserva-card" id="rcard-${r.id}">
+    <div class="reserva-header">
+      <span class="reserva-num">${r.numero}</span>
+      <span class="reserva-fecha">📅 ${fecha} · ${r.hora}</span>
+      <span class="badge ${r.estado}">${r.estado}</span>
+    </div>
+    <div class="reserva-ruta">
+      <div class="parada"><span class="dot verde"></span><span>${r.origen}</span></div>
+      <div class="parada"><span class="dot rojo"></span><span>${r.destino}</span></div>
+    </div>
+    <div class="reserva-meta">
+      <span class="chip">👤 <strong>${r.cliente||'-'}</strong></span>
+      <span class="chip">👥 <strong>${r.pasajeros}</strong> pax</span>
+      ${r.precio?`<span class="chip">💰 <strong>${r.precio}€</strong></span>`:''}
+      ${r.vuelo?`<span class="chip">✈️ ${r.vuelo}</span>`:''}
+      ${r.telefono?`<span class="chip">📞 ${r.telefono}</span>`:''}
+    </div>
+    ${notasHtml}${conductorHtml}
+    ${accionesBtns.length?`<div class="reserva-acciones">${accionesBtns.join('')}</div>`:''}
+  </div>`;
+}
+
+async function aceptarReserva(id, btn) {
+  btn.disabled=true; btn.textContent='Aceptando...';
+  try {
+    const r=await fetch('/api/admin/aceptar/'+id,{method:'POST',headers:{Authorization:'Bearer '+token()}});
+    const d=await r.json();
+    if(!r.ok){alert(d.error||'Error');btn.disabled=false;btn.textContent='✅ Aceptar';return;}
+    setTimeout(cargarReservas,800);
+  } catch(e){alert('Error');btn.disabled=false;btn.textContent='✅ Aceptar';}
+}
+
+// ====== MODAL CONFIRMACIÓN ======
+let modalCallback=null;
+function confirmar(accion, id, titulo, texto, btn) {
+  document.getElementById('modal-titulo').textContent=titulo;
+  document.getElementById('modal-texto').textContent=texto;
+  const confBtn=document.getElementById('modal-confirmar');
+  confBtn.textContent=accion==='cancelar'?'Sí, cancelar':'Confirmar';
+  confBtn.style.background=accion==='cancelar'?'var(--rojo)':'var(--naranja)';
+  modalCallback=async()=>{
+    cerrarModal();
+    if(btn) btn.disabled=true;
+    const url=accion==='reasignar'?`/api/admin/reasignar/${id}`:`/api/admin/cancelar/${id}`;
+    try{
+      await fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token()}});
+      setTimeout(()=>{cargarStats();cargarReservas();},800);
+    }catch(e){alert('Error');}
+  };
+  document.getElementById('modal').style.display='flex';
+}
+document.getElementById('modal-confirmar').onclick=()=>modalCallback&&modalCallback();
+function cerrarModal(){document.getElementById('modal').style.display='none';modalCallback=null;}
+document.getElementById('modal').addEventListener('click',e=>{if(e.target===e.currentTarget)cerrarModal();});
+
+// ====== CONDUCTORES ======
+async function cargarConductores() {
+  const lista=document.getElementById('lista-conductores');
+  lista.innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r=await fetch('/api/admin/conductores',{headers:{Authorization:'Bearer '+token()}});
+    if(r.status===401){cerrarSesion();return;}
+    const conductores=await r.json();
+    if(!conductores.length){lista.innerHTML='<div class="sin-datos"><span class="emoji">👥</span>Sin conductores registrados</div>';return;}
+    lista.innerHTML=conductores.map(conductorCard).join('');
+  } catch(e){lista.innerHTML='<div class="sin-datos"><span class="emoji">❌</span>Error al cargar</div>';}
+}
+
+function conductorCard(c) {
+  const pendiente=!c.aprobado?`<span class="badge-pendiente-aprobacion">Pendiente</span>`:'';
+  const estadoActivo=c.activo?'Activo':'Inactivo';
+  return `<div class="conductor-card" id="ccard-${c.id}">
+    <div class="conductor-avatar">🚖</div>
+    <div class="conductor-info">
+      <div class="nombre">${c.nombre}${pendiente}</div>
+      <div class="detalle">Lic: ${c.licencia} · Plaza: ${c.plaza||'-'} · ${estadoActivo}</div>
+      <div class="detalle">${c.email||'-'} · ${c.telefono||'-'}</div>
+    </div>
+    <div class="conductor-acciones">
+      ${!c.aprobado?`<button class="btn-sm amarillo" onclick="aprobarConductor('${c.id}',this)">✅ Aprobar</button>`:''}
+      <button class="btn-sm ${c.activo?'rojo':'verde'}" onclick="toggleActivo('${c.id}',this,${c.activo})">${c.activo?'Pausar':'Activar'}</button>
+      <button class="btn-sm rojo" onclick="eliminarConductor('${c.id}','${c.nombre}',this)">🗑</button>
+    </div>
+  </div>`;
+}
+
+async function aprobarConductor(id, btn) {
+  btn.disabled=true;
+  try {
+    await fetch('/api/admin/conductores/'+id+'/aprobar',{method:'POST',headers:{Authorization:'Bearer '+token()}});
+    setTimeout(cargarConductores,500);
+  } catch(e){btn.disabled=false;}
+}
+
+async function toggleActivo(id, btn, actual) {
+  btn.disabled=true;
+  try {
+    await fetch('/api/admin/conductores/'+id+'/toggle-activo',{method:'POST',headers:{Authorization:'Bearer '+token()}});
+    setTimeout(cargarConductores,500);
+  } catch(e){btn.disabled=false;}
+}
+
+async function eliminarConductor(id, nombre, btn) {
+  if(!confirm(`¿Eliminar a ${nombre}? Esta acción no se puede deshacer.`)) return;
+  btn.disabled=true;
+  try {
+    await fetch('/api/admin/conductores/'+id,{method:'DELETE',headers:{Authorization:'Bearer '+token()}});
+    setTimeout(cargarConductores,500);
+  } catch(e){btn.disabled=false;}
+}
+
+// ====== COMISIONES ======
+async function cargarComisiones() {
+  const lista=document.getElementById('lista-comisiones');
+  lista.innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r=await fetch('/api/admin/comisiones',{headers:{Authorization:'Bearer '+token()}});
+    if(r.status===401){cerrarSesion();return;}
+    const comisiones=await r.json();
+    if(!comisiones.length){lista.innerHTML='<div class="sin-datos"><span class="emoji">💰</span>No hay comisiones pendientes</div>';return;}
+    lista.innerHTML=comisiones.map(c=>`
+      <div class="comision-card">
+        <div class="comision-info">
+          <div class="nombre">${c.nombre}</div>
+          <div class="detalle">${c.servicios} servicio${c.servicios!==1?'s':''} pendiente${c.servicios!==1?'s':''}</div>
+        </div>
+        <div class="comision-derecha">
+          <div class="importe">${c.total}€</div>
+          <button class="btn-sm amarillo" style="margin-top:8px" onclick="pagarComision('${c.chatId}','${c.nombre}',this)">Marcar pagada</button>
+        </div>
+      </div>`).join('');
+  } catch(e){lista.innerHTML='<div class="sin-datos"><span class="emoji">❌</span>Error al cargar</div>';}
+}
+
+async function pagarComision(chatId, nombre, btn) {
+  if(!confirm(`¿Marcar todas las comisiones de ${nombre} como pagadas?`)) return;
+  btn.disabled=true; btn.textContent='Guardando...';
+  try {
+    await fetch('/api/admin/comisiones/pagar/'+chatId,{method:'POST',headers:{Authorization:'Bearer '+token()}});
+    setTimeout(()=>{cargarComisiones();cargarStats();},500);
+  } catch(e){btn.disabled=false;btn.textContent='Marcar pagada';}
+}
+
+// ====== INICIO ======
+if(token()) iniciarAdmin();
+
+// Refrescar stats cada 60 segundos
+setInterval(()=>{
+  if(document.getElementById('screen-admin').style.display!=='none') cargarStats();
+},60000);
+</script>
+</body>
+</html>
