@@ -394,6 +394,18 @@ mongoose.connect(MONGODB_URI).then(async () => {
     );
     if (res.modifiedCount) console.log(`Conductores existentes aprobados automáticamente: ${res.modifiedCount}`);
   } catch (e) { console.error('Error migrando conductores:', e.message); }
+  // Limpiar valores 'undefined' como string en campos de conductores
+  try {
+    await Conductor.updateMany({ licencia: 'undefined' }, { $set: { licencia: null } });
+    await Conductor.updateMany({ plaza: 'undefined' }, { $set: { plaza: null } });
+    await Conductor.updateMany({ email: 'undefined' }, { $set: { email: null } });
+    await Conductor.updateMany({ telefono: 'undefined' }, { $set: { telefono: null } });
+  } catch (e) { console.error('Error limpiando undefined:', e.message); }
+  // Limpiar reservas en estado 'asignando' que quedaron bloqueadas (por reinicios)
+  try {
+    const bloqueadas = await Reserva.updateMany({ estado: 'asignando' }, { $set: { estado: 'pendiente' } });
+    if (bloqueadas.modifiedCount) console.log(`Reservas desbloqueadas: ${bloqueadas.modifiedCount}`);
+  } catch (e) { console.error('Error desbloqueando reservas:', e.message); }
   iniciarRecordatorios();
   iniciarResumenMensual();
 }).catch(err => console.error('Error MongoDB:', err));
@@ -1263,8 +1275,12 @@ bot.on('callback_query', async (query) => {
   if (data.startsWith('aceptar_')) {
     const reservaId = data.replace('aceptar_', '');
     try {
-      const reserva = await Reserva.findById(reservaId);
-      if (!reserva || reserva.estado !== 'pendiente') {
+      const reserva = await Reserva.findOneAndUpdate(
+        { _id: reservaId, estado: 'pendiente' },
+        { $set: { estado: 'asignando' } },
+        { new: false }
+      );
+      if (!reserva) {
         bot.answerCallbackQuery(query.id, { text: '❌ Esta reserva ya fue asignada.', show_alert: true });
         return;
       }
@@ -1800,7 +1816,7 @@ app.post('/api/conductores/solicitar-codigo', async (req, res) => {
 
     const codigo = String(Math.floor(100000 + Math.random() * 900000));
     conductor.codigoVerificacion = codigo;
-    conductor.codigoExpira = new Date(Date.now() + 10 * 60 * 1000);
+    conductor.codigoExpira = new Date(Date.now() + 30 * 60 * 1000);
     await conductor.save();
 
     await enviarCodigoVerificacion(email, conductor.nombre, codigo);
@@ -1867,9 +1883,13 @@ app.get('/api/conductores/servicios', authConductor, async (req, res) => {
 // Aceptar servicio desde la app web
 app.post('/api/conductores/aceptar/:id', authConductor, async (req, res) => {
   try {
-    const reserva = await Reserva.findById(req.params.id);
-    if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
-    if (reserva.estado !== 'pendiente') return res.status(400).json({ error: 'Esta reserva ya no está disponible' });
+    // Bloqueo atómico: solo asigna si sigue pendiente
+    const reserva = await Reserva.findOneAndUpdate(
+      { _id: req.params.id, estado: 'pendiente' },
+      { $set: { estado: 'asignando' } },
+      { new: false }
+    );
+    if (!reserva) return res.status(400).json({ error: 'Esta reserva ya no está disponible' });
 
     const conductor = await Conductor.findById(req.conductor.id);
     if (!conductor) return res.status(404).json({ error: 'Conductor no encontrado' });
