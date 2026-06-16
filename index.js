@@ -1185,6 +1185,11 @@ async function repartirReservaAConductores(reserva) {
   if (prioritario) {
     // FASE 1: enviar SOLO al conductor prioritario y esperar X minutos.
     await enviarReservaA(reserva, [prioritario]);
+    // Push inmediato al prioritario
+    try {
+      const d = reserva.datos;
+      await enviarPushAConductores([prioritario], '⭐ Reserva exclusiva para ti', `${d.fecha} ${d.hora} · ${d.origen} → ${d.destino} — Tienes ${MINUTOS_PRIORIDAD} min`);
+    } catch(e) {}
     try { bot.sendMessage(OWNER_CHAT_ID, `⭐ Reserva ${numReserva(reserva.numero)} enviada en exclusiva a ${prioritario.nombre} (lic. ${LICENCIA_PRIORITARIA}) durante ${MINUTOS_PRIORIDAD} min.`); } catch (e) {}
     // Programar el reparto al resto si no la acepta a tiempo.
     setTimeout(async () => {
@@ -1815,10 +1820,21 @@ app.post('/api/conductores/verificar-codigo', async (req, res) => {
   }
 });
 
-// Obtener servicios disponibles (pendientes)
+// Obtener servicios disponibles (pendientes) — respetando la prioridad
 app.get('/api/conductores/servicios', authConductor, async (req, res) => {
   try {
-    const reservas = await Reserva.find({ estado: 'pendiente' }).sort({ fechaCreacion: -1 }).limit(20);
+    const conductor = await Conductor.findById(req.conductor.id);
+    const esPrioritario = String(conductor.licencia) === String(LICENCIA_PRIORITARIA);
+    const ahora = new Date();
+    const hace2min = new Date(ahora.getTime() - MINUTOS_PRIORIDAD * 60 * 1000);
+
+    // Si el conductor NO es prioritario, ocultarle las reservas creadas hace menos de 2 minutos
+    // (que aún están en la ventana exclusiva del prioritario)
+    const filtro = esPrioritario
+      ? { estado: 'pendiente' }
+      : { estado: 'pendiente', fechaCreacion: { $lte: hace2min } };
+
+    const reservas = await Reserva.find(filtro).sort({ fechaCreacion: -1 }).limit(20);
     res.json(reservas.map(r => ({
       id: r._id,
       numero: numReserva(r.numero),
