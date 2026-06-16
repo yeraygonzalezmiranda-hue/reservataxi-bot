@@ -378,12 +378,13 @@ function cerrarModalReasignar() {
 document.getElementById('modal-reasignar').addEventListener('click',e=>{if(e.target===e.currentTarget)cerrarModalReasignar();});
 
 async function reasignarPendiente() {
-  if (!reservaReasignarId || reservaReasignarId === 'null' || reservaReasignarId === 'undefined') {
+  const idReserva = reservaReasignarId;
+  if (!idReserva || idReserva === 'null' || idReserva === 'undefined') {
     alert('Error: ID de reserva no válido');
     return;
   }
-  const idReserva = reservaReasignarId;
-  cerrarModalReasignar();
+  document.getElementById('modal-reasignar').style.display='none';
+  reservaReasignarId = null;
   try {
     const r = await fetch('/api/admin/reasignar/'+idReserva,{method:'POST',headers:{Authorization:'Bearer '+token()}});
     const d = await r.json();
@@ -413,10 +414,14 @@ async function mostrarListaConductores() {
 }
 
 async function asignarAConductor(conductorId, nombre) {
-  if (!reservaReasignarId) return;
+  // Guardar el ID ANTES de cualquier operación que pueda limpiar el modal
+  const idReserva = reservaReasignarId;
+  if (!idReserva || idReserva === 'null') { alert('Error: no hay reserva seleccionada'); return; }
+  if (!conductorId || conductorId === 'null') { alert('Error: no hay conductor seleccionado'); return; }
   if (!confirm(`¿Asignar esta reserva a ${nombre}?`)) return;
-  const idReserva = reservaReasignarId; // Guardar antes de cerrar el modal
-  cerrarModalReasignar();
+  // Cerrar el modal DESPUÉS de confirmar
+  document.getElementById('modal-reasignar').style.display='none';
+  reservaReasignarId = null;
   try {
     const r = await fetch('/api/admin/asignar-conductor/'+idReserva,{
       method:'POST',
@@ -424,9 +429,9 @@ async function asignarAConductor(conductorId, nombre) {
       body:JSON.stringify({conductorId})
     });
     const d = await r.json();
-    if (!r.ok) { alert(d.error||'Error'); return; }
+    if (!r.ok) { alert(d.error||'Error al asignar'); return; }
     setTimeout(()=>{cargarStats();cargarReservas();},800);
-  } catch(e){alert('Error');}
+  } catch(e){alert('Error de conexión');}
 }
 
 // ====== CONDUCTORES ======
