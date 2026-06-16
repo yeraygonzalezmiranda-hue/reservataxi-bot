@@ -191,7 +191,7 @@
   </div>
 </div>
 
-<!-- MODAL -->
+<!-- MODAL CONFIRMACIÓN -->
 <div class="modal-overlay" id="modal" style="display:none">
   <div class="modal">
     <h3 id="modal-titulo"></h3>
@@ -200,6 +200,18 @@
       <button class="cancelar" onclick="cerrarModal()">Cancelar</button>
       <button class="confirmar" id="modal-confirmar">Confirmar</button>
     </div>
+  </div>
+</div>
+
+<!-- MODAL REASIGNAR -->
+<div class="modal-overlay" id="modal-reasignar" style="display:none">
+  <div class="modal" style="max-width:420px">
+    <h3>🔄 Reasignar reserva</h3>
+    <p style="margin-bottom:16px">¿Cómo quieres reasignar esta reserva?</p>
+    <button class="btn-primary" style="margin-bottom:10px" onclick="reasignarPendiente()">📢 Enviar a todos los conductores</button>
+    <button class="btn-secondary" style="margin-bottom:16px" onclick="mostrarListaConductores()">👤 Asignar a conductor específico</button>
+    <div id="lista-conductores-modal" style="display:none;max-height:280px;overflow-y:auto;margin-bottom:12px"></div>
+    <button class="cancelar" style="width:100%;padding:11px;border-radius:10px;border:none;background:#222;color:#888;cursor:pointer;font-size:14px" onclick="cerrarModalReasignar()">Cancelar</button>
   </div>
 </div>
 
@@ -289,7 +301,7 @@ function reservaCard(r) {
   const esAsignada=r.estado==='asignada';
   const accionesBtns=[];
   if(esPendiente) accionesBtns.push(`<button class="btn-accion verde" onclick="aceptarReserva('${r.id}',this)">✅ Aceptar</button>`);
-  if(esPendiente||esAsignada) accionesBtns.push(`<button class="btn-accion naranja" onclick="confirmar('reasignar','${r.id}','Reasignar ${r.numero}','¿Reasignar esta reserva? Se enviará a todos los conductores disponibles.',this)">🔄 Reasignar</button>`);
+  if(esPendiente||esAsignada) accionesBtns.push(`<button class="btn-accion naranja" onclick="abrirModalReasignar('${r.id}')">🔄 Reasignar</button>`);
   if(r.estado!=='cancelada') accionesBtns.push(`<button class="btn-accion rojo" onclick="confirmar('cancelar','${r.id}','Cancelar ${r.numero}','¿Estás seguro de que quieres cancelar esta reserva?',this)">❌ Cancelar</button>`);
   return `<div class="reserva-card" id="rcard-${r.id}">
     <div class="reserva-header">
@@ -346,6 +358,67 @@ document.getElementById('modal-confirmar').onclick=()=>modalCallback&&modalCallb
 function cerrarModal(){document.getElementById('modal').style.display='none';modalCallback=null;}
 document.getElementById('modal').addEventListener('click',e=>{if(e.target===e.currentTarget)cerrarModal();});
 
+// ====== MODAL REASIGNAR ======
+let reservaReasignarId = null;
+
+function abrirModalReasignar(id) {
+  reservaReasignarId = id;
+  document.getElementById('lista-conductores-modal').style.display='none';
+  document.getElementById('lista-conductores-modal').innerHTML='';
+  document.getElementById('modal-reasignar').style.display='flex';
+}
+
+function cerrarModalReasignar() {
+  document.getElementById('modal-reasignar').style.display='none';
+  reservaReasignarId = null;
+}
+document.getElementById('modal-reasignar').addEventListener('click',e=>{if(e.target===e.currentTarget)cerrarModalReasignar();});
+
+async function reasignarPendiente() {
+  if (!reservaReasignarId) return;
+  cerrarModalReasignar();
+  try {
+    await fetch('/api/admin/reasignar/'+reservaReasignarId,{method:'POST',headers:{Authorization:'Bearer '+token()}});
+    setTimeout(()=>{cargarStats();cargarReservas();},800);
+  } catch(e){alert('Error');}
+}
+
+async function mostrarListaConductores() {
+  const lista = document.getElementById('lista-conductores-modal');
+  lista.style.display='block';
+  lista.innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r = await fetch('/api/admin/conductores',{headers:{Authorization:'Bearer '+token()}});
+    const conductores = await r.json();
+    const activos = conductores.filter(c=>c.activo&&c.aprobado);
+    if (!activos.length) { lista.innerHTML='<p style="text-align:center;color:#888;padding:16px">No hay conductores activos</p>'; return; }
+    lista.innerHTML = activos.map(c=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #2a2a2a">
+        <div>
+          <div style="font-weight:700;font-size:14px">${c.nombre}</div>
+          <div style="font-size:12px;color:#888">Lic: ${c.licencia||'-'} · Plaza: ${c.plaza||'-'}</div>
+        </div>
+        <button class="btn-sm amarillo" onclick="asignarAConductor('${c.id}','${c.nombre}')">Asignar</button>
+      </div>`).join('');
+  } catch(e){ lista.innerHTML='<p style="color:#e57373;padding:16px">Error al cargar conductores</p>'; }
+}
+
+async function asignarAConductor(conductorId, nombre) {
+  if (!reservaReasignarId) return;
+  if (!confirm(`¿Asignar esta reserva a ${nombre}?`)) return;
+  cerrarModalReasignar();
+  try {
+    const r = await fetch('/api/admin/asignar-conductor/'+reservaReasignarId,{
+      method:'POST',
+      headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},
+      body:JSON.stringify({conductorId})
+    });
+    const d = await r.json();
+    if (!r.ok) { alert(d.error||'Error'); return; }
+    setTimeout(()=>{cargarStats();cargarReservas();},800);
+  } catch(e){alert('Error');}
+}
+
 // ====== CONDUCTORES ======
 async function cargarConductores() {
   const lista=document.getElementById('lista-conductores');
@@ -387,10 +460,13 @@ async function aprobarConductor(id, btn) {
 
 async function toggleActivo(id, btn, actual) {
   btn.disabled=true;
+  btn.textContent='...';
   try {
-    await fetch('/api/admin/conductores/'+id+'/toggle-activo',{method:'POST',headers:{Authorization:'Bearer '+token()}});
-    setTimeout(cargarConductores,500);
-  } catch(e){btn.disabled=false;}
+    const r = await fetch('/api/admin/conductores/'+id+'/toggle-activo',{method:'POST',headers:{Authorization:'Bearer '+token()}});
+    const d = await r.json();
+    if(!r.ok){alert(d.error||'Error');btn.disabled=false;return;}
+    setTimeout(cargarConductores, 300);
+  } catch(e){alert('Error de conexión');btn.disabled=false;}
 }
 
 async function eliminarConductor(id, nombre, btn) {
