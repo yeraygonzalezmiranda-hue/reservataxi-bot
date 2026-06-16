@@ -2137,7 +2137,6 @@ app.post('/api/admin/aceptar/:id', authAdmin, async (req, res) => {
 app.post('/api/admin/reasignar/:id', authAdmin, async (req, res) => {
   try {
     const idParam = req.params.id;
-    console.log('REASIGNAR llamado con id:', idParam);
     if (!idParam || idParam === 'null' || idParam === 'undefined') {
       return res.status(400).json({ error: 'ID de reserva no válido: ' + idParam });
     }
