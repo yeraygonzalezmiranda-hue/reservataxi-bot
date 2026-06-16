@@ -281,8 +281,15 @@ const conductorSchema = new mongoose.Schema({
   chatId: { type: String, unique: true },
   nombre: String,
   licencia: String,
+  telefono: String,
+  email: String,
+  password: String,
+  plaza: String,
+  codigoVerificacion: String,
+  codigoExpira: Date,
   aprobado: { type: Boolean, default: false },
   activo: { type: Boolean, default: true },
+  pushSubscription: String,
   fechaRegistro: { type: Date, default: Date.now }
 });
 
@@ -1162,6 +1169,11 @@ async function enviarReservaA(reserva, conductores) {
   }
   reserva.mensajesEnviados = mensajesEnviados;
   await reserva.save();
+  // Notificación push a conductores con app web
+  try {
+    const d = reserva.datos;
+    await enviarPushAConductores(conductores, '🚖 Nueva reserva disponible', `${d.fecha} ${d.hora} · ${d.origen} → ${d.destino}`);
+  } catch (e) {}
   return mensajesEnviados.length;
 }
 
@@ -1373,6 +1385,45 @@ bot.on('callback_query', async (query) => {
   if (data === 'no_delconductor') {
     bot.editMessageText(`↩️ Eliminación cancelada. El conductor sigue en el sistema.`, { chat_id: chatId, message_id: messageId });
     bot.answerCallbackQuery(query.id, { text: 'Cancelado' });
+  }
+
+  // Aprobar conductor registrado desde la app web
+  if (data.startsWith('aprobar_web_')) {
+    const conductorId = data.replace('aprobar_web_', '');
+    try {
+      const conductor = await Conductor.findByIdAndUpdate(conductorId, { aprobado: true }, { new: true });
+      if (!conductor) return bot.answerCallbackQuery(query.id, { text: 'Conductor no encontrado' });
+      bot.answerCallbackQuery(query.id, { text: `✅ ${conductor.nombre} aprobado` });
+      bot.editMessageText(`✅ Conductor aprobado: ${conductor.nombre}`, { chat_id: query.message.chat.id, message_id: query.message.message_id });
+      if (conductor.email && BREVO_API_KEY) {
+        await enviarEmailBrevo({
+          sender: { name: 'Reserva Taxi Las Palmas', email: 'reservas@taxilaspalmasdegrancanaria.com' },
+          to: [{ email: conductor.email, name: conductor.nombre }],
+          subject: '✅ Tu cuenta ha sido aprobada',
+          htmlContent: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px"><h2 style="color:#f5c400">🚖 ¡Bienvenido, ${conductor.nombre}!</h2><p>Tu cuenta de conductor ha sido aprobada. Ya puedes entrar en la app:</p><a href="https://reservataxilaspalmas.com/conductores" style="display:inline-block;background:#f5c400;color:#000;padding:12px 24px;border-radius:8px;font-weight:bold;text-decoration:none;margin-top:16px">Entrar a la app</a></div>`
+        });
+      }
+    } catch (e) { bot.answerCallbackQuery(query.id, { text: 'Error: ' + e.message }); }
+    return;
+  }
+
+  if (data.startsWith('rechazar_web_')) {
+    const conductorId = data.replace('rechazar_web_', '');
+    try {
+      const conductor = await Conductor.findByIdAndDelete(conductorId);
+      if (!conductor) return bot.answerCallbackQuery(query.id, { text: 'Conductor no encontrado' });
+      bot.answerCallbackQuery(query.id, { text: `❌ ${conductor.nombre} rechazado` });
+      bot.editMessageText(`❌ Conductor rechazado: ${conductor.nombre}`, { chat_id: query.message.chat.id, message_id: query.message.message_id });
+      if (conductor.email && BREVO_API_KEY) {
+        await enviarEmailBrevo({
+          sender: { name: 'Reserva Taxi Las Palmas', email: 'reservas@taxilaspalmasdegrancanaria.com' },
+          to: [{ email: conductor.email, name: conductor.nombre }],
+          subject: 'Solicitud de registro no aprobada',
+          htmlContent: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px"><h2 style="color:#f5c400">Reserva Taxi Las Palmas</h2><p>Hola ${conductor.nombre}, lamentablemente tu solicitud de registro no ha sido aprobada. Para más información contacta al administrador.</p></div>`
+        });
+      }
+    } catch (e) { bot.answerCallbackQuery(query.id, { text: 'Error: ' + e.message }); }
+    return;
   }
 });
 
@@ -1622,3 +1673,515 @@ app.get('/cancelar-confirmar', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
+
+// =================== APP CONDUCTORES (PWA) ===================
+
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const webpush = require('web-push');
+
+// Configurar VAPID para notificaciones push
+const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || '';
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
+if (VAPID_PUBLIC && VAPID_PRIVATE) {
+  webpush.setVapidDetails('mailto:reservas@taxilaspalmasdegrancanaria.com', VAPID_PUBLIC, VAPID_PRIVATE);
+}
+
+async function enviarPushAConductores(conductores, titulo, cuerpo) {
+  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
+  for (const c of conductores) {
+    if (!c.pushSubscription) continue;
+    try {
+      const sub = JSON.parse(c.pushSubscription);
+      await webpush.sendNotification(sub, JSON.stringify({ title: titulo, body: cuerpo }));
+    } catch (e) {
+      if (e.statusCode === 410) {
+        await Conductor.findByIdAndUpdate(c._id, { pushSubscription: null });
+      }
+    }
+  }
+}
+const JWT_SECRET = process.env.JWT_SECRET || 'taxi_lpa_secret_2026';
+
+// Middleware: verificar JWT
+function authConductor(req, res, next) {
+  const auth = req.headers.authorization || '';
+  const token = auth.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'No autorizado' });
+  try {
+    req.conductor = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch (e) {
+    return res.status(401).json({ error: 'Token inválido' });
+  }
+}
+
+// Enviar código de verificación por email
+async function enviarCodigoVerificacion(email, nombre, codigo) {
+  if (!BREVO_API_KEY) return;
+  await enviarEmailBrevo({
+    sender: { name: 'Reserva Taxi Las Palmas', email: 'reservas@taxilaspalmasdegrancanaria.com' },
+    to: [{ email, name: nombre }],
+    subject: 'Código de verificación — App Conductores',
+    htmlContent: `
+      <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px">
+        <h2 style="color:#f5c400;margin:0 0 16px">🚖 Reserva Taxi Las Palmas</h2>
+        <p>Hola <strong>${nombre}</strong>, tu código de verificación es:</p>
+        <div style="font-size:42px;font-weight:bold;color:#f5c400;text-align:center;letter-spacing:12px;margin:24px 0">${codigo}</div>
+        <p style="color:#aaa;font-size:13px">Este código expira en 10 minutos. Si no solicitaste este código, ignora este email.</p>
+      </div>`
+  });
+}
+
+// Registro de conductor desde la app web
+app.post('/api/conductores/registro', async (req, res) => {
+  try {
+    const { nombre, telefono, email, password, licencia, plaza } = req.body;
+    if (!nombre || !telefono || !email || !password || !licencia || !plaza)
+      return res.status(400).json({ error: 'Todos los campos son obligatorios' });
+
+    const existe = await Conductor.findOne({ $or: [{ email }, { licencia }] });
+    if (existe) return res.status(400).json({ error: 'Ya existe un conductor con ese email o licencia' });
+
+    const hash = await bcrypt.hash(password, 10);
+    const chatId = 'web_' + Date.now();
+    const conductor = new Conductor({ chatId, nombre, telefono, email, password: hash, licencia, plaza, aprobado: false });
+    await conductor.save();
+
+    // Avisar al admin por Telegram
+    bot.sendMessage(OWNER_CHAT_ID,
+      `🆕 *Nuevo conductor registrado (app web)*\n\n👤 ${nombre}\n📱 ${telefono}\n✉️ ${email}\n🪪 Licencia: ${licencia}\n🚗 Plaza: ${plaza}\n\nID: ${conductor._id}`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '✅ Aprobar', callback_data: `aprobar_web_${conductor._id}` },
+            { text: '❌ Rechazar', callback_data: `rechazar_web_${conductor._id}` }
+          ]]
+        }
+      }
+    );
+
+    res.json({ ok: true, mensaje: 'Registro enviado. Recibirás un email cuando seas aprobado.' });
+  } catch (e) {
+    console.error('Error registro conductor web:', e.message);
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+// Solicitar código de verificación para login
+app.post('/api/conductores/solicitar-codigo', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const conductor = await Conductor.findOne({ email });
+    if (!conductor) return res.status(400).json({ error: 'Email o contraseña incorrectos' });
+    if (!conductor.aprobado) return res.status(403).json({ error: 'Tu cuenta aún no ha sido aprobada' });
+
+    const ok = await bcrypt.compare(password, conductor.password);
+    if (!ok) return res.status(400).json({ error: 'Email o contraseña incorrectos' });
+
+    const codigo = String(Math.floor(100000 + Math.random() * 900000));
+    conductor.codigoVerificacion = codigo;
+    conductor.codigoExpira = new Date(Date.now() + 10 * 60 * 1000);
+    await conductor.save();
+
+    await enviarCodigoVerificacion(email, conductor.nombre, codigo);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error solicitar codigo:', e.message);
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+// Verificar código y devolver JWT
+app.post('/api/conductores/verificar-codigo', async (req, res) => {
+  try {
+    const { email, codigo } = req.body;
+    const conductor = await Conductor.findOne({ email });
+    if (!conductor) return res.status(400).json({ error: 'Conductor no encontrado' });
+    if (conductor.codigoVerificacion !== codigo) return res.status(400).json({ error: 'Código incorrecto' });
+    if (new Date() > conductor.codigoExpira) return res.status(400).json({ error: 'Código expirado' });
+
+    conductor.codigoVerificacion = null;
+    conductor.codigoExpira = null;
+    await conductor.save();
+
+    const token = jwt.sign({ id: conductor._id, chatId: conductor.chatId, nombre: conductor.nombre }, JWT_SECRET, { expiresIn: '30d' });
+    res.json({ ok: true, token, nombre: conductor.nombre });
+  } catch (e) {
+    console.error('Error verificar codigo:', e.message);
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+// Obtener servicios disponibles (pendientes)
+app.get('/api/conductores/servicios', authConductor, async (req, res) => {
+  try {
+    const reservas = await Reserva.find({ estado: 'pendiente' }).sort({ fechaCreacion: -1 }).limit(20);
+    res.json(reservas.map(r => ({
+      id: r._id,
+      numero: numReserva(r.numero),
+      fecha: r.datos.fecha,
+      hora: r.datos.hora,
+      origen: r.datos.origen,
+      destino: r.datos.destino,
+      pasajeros: r.datos.pasajeros,
+      precio: r.datos.precioEstimado,
+      notas: r.datos.observaciones
+    })));
+  } catch (e) {
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+// Aceptar servicio desde la app web
+app.post('/api/conductores/aceptar/:id', authConductor, async (req, res) => {
+  try {
+    const reserva = await Reserva.findById(req.params.id);
+    if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
+    if (reserva.estado !== 'pendiente') return res.status(400).json({ error: 'Esta reserva ya no está disponible' });
+
+    const conductor = await Conductor.findById(req.conductor.id);
+    if (!conductor) return res.status(404).json({ error: 'Conductor no encontrado' });
+
+    reserva.estado = 'asignada';
+    reserva.conductorAsignado = conductor.chatId;
+    reserva.conductorNombre = conductor.nombre;
+    await reserva.save();
+
+    // Crear evento en calendario
+    const eventoId = await crearEventoCalendario(reserva, conductor.nombre);
+    if (eventoId) { reserva.eventoCalendarioId = eventoId; await reserva.save(); }
+
+    // Registrar comisión
+    const esLicenciaPrioritaria = conductor.licencia === LICENCIA_PRIORITARIA;
+    if (!esLicenciaPrioritaria && reserva.datos.precioEstimado) {
+      const precio = parseFloat(reserva.datos.precioEstimado);
+      await new Comision({
+        conductorChatId: conductor.chatId,
+        conductorNombre: conductor.nombre,
+        reservaId: reserva._id,
+        precioCarrera: precio,
+        comision: parseFloat((precio * COMISION_PORCENTAJE / 100).toFixed(2)),
+        mes: new Date().toISOString().slice(0, 7)
+      }).save();
+    }
+
+    // Avisar al admin
+    bot.sendMessage(OWNER_CHAT_ID, `✅ *${conductor.nombre}* aceptó ${numReserva(reserva.numero)} desde la app web.\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
+
+    // Email al cliente
+    await enviarEmailConfirmacion(reserva.datos, reserva._id, conductor.nombre, reserva.numero);
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error aceptar desde web:', e.message);
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+// Mis servicios (los que tiene asignados el conductor)
+app.get('/api/conductores/mis-servicios', authConductor, async (req, res) => {
+  try {
+    const conductor = await Conductor.findById(req.conductor.id);
+    const reservas = await Reserva.find({ conductorAsignado: conductor.chatId, estado: { $in: ['asignada', 'completada'] } }).sort({ fechaServicio: -1 }).limit(30);
+    res.json(reservas.map(r => ({
+      id: r._id,
+      numero: numReserva(r.numero),
+      fecha: r.datos.fecha,
+      hora: r.datos.hora,
+      origen: r.datos.origen,
+      destino: r.datos.destino,
+      pasajeros: r.datos.pasajeros,
+      precio: r.datos.precioEstimado,
+      estado: r.estado
+    })));
+  } catch (e) {
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+// Servir service worker, manifest y app de conductores
+app.get('/manifest.json', (req, res) => res.sendFile(path.join(__dirname, 'public', 'manifest.json')));
+app.get('/sw.js', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sw.js')));
+app.get('/conductores', (req, res) => res.sendFile(path.join(__dirname, 'public', 'conductores.html')));
+app.get('/conductores.html', (req, res) => res.sendFile(path.join(__dirname, 'public', 'conductores.html')));
+
+
+// ====== PERFIL: ver datos ======
+app.get('/api/conductores/perfil', authConductor, async (req, res) => {
+  try {
+    const c = await Conductor.findById(req.conductor.id).select('-password -codigoVerificacion -codigoExpira');
+    if (!c) return res.status(404).json({ error: 'No encontrado' });
+    res.json({ nombre: c.nombre, telefono: c.telefono, email: c.email, licencia: c.licencia, plaza: c.plaza });
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ====== PERFIL: cambiar contraseña ======
+app.post('/api/conductores/cambiar-password', authConductor, async (req, res) => {
+  try {
+    const { actual, nueva } = req.body;
+    if (!actual || !nueva || nueva.length < 6) return res.status(400).json({ error: 'Contraseña nueva debe tener al menos 6 caracteres' });
+    const c = await Conductor.findById(req.conductor.id);
+    const ok = await bcrypt.compare(actual, c.password);
+    if (!ok) return res.status(400).json({ error: 'Contraseña actual incorrecta' });
+    c.password = await bcrypt.hash(nueva, 10);
+    await c.save();
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ====== COMISIONES del conductor ======
+app.get('/api/conductores/comisiones', authConductor, async (req, res) => {
+  try {
+    const c = await Conductor.findById(req.conductor.id);
+    const comisiones = await Comision.find({ conductorChatId: c.chatId }).sort({ fechaCreacion: -1 }).limit(50);
+    const totalPendiente = comisiones.filter(x => !x.pagada).reduce((s, x) => s + x.comision, 0);
+    res.json({
+      totalPendiente: parseFloat(totalPendiente.toFixed(2)),
+      comisiones: comisiones.map(x => ({
+        mes: x.mes,
+        precioCarrera: x.precioCarrera,
+        comision: x.comision,
+        pagada: x.pagada,
+        fecha: x.fechaCreacion
+      }))
+    });
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ====== PUSH: guardar suscripción ======
+app.post('/api/conductores/push-subscribe', authConductor, async (req, res) => {
+  try {
+    const { subscription } = req.body;
+    await Conductor.findByIdAndUpdate(req.conductor.id, { pushSubscription: JSON.stringify(subscription) });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ====== PUSH: VAPID keys (para el cliente) ======
+app.get('/api/conductores/vapid-key', (req, res) => {
+  res.json({ publicKey: process.env.VAPID_PUBLIC_KEY || '' });
+});
+
+
+// =================== PANEL ADMIN WEB ===================
+
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'taxilpa2026';
+const ADMIN_JWT_SECRET = process.env.JWT_SECRET || 'taxi_lpa_secret_2026';
+
+function authAdmin(req, res, next) {
+  const auth = req.headers.authorization || '';
+  const token = auth.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'No autorizado' });
+  try {
+    const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
+    if (decoded.role !== 'admin') return res.status(403).json({ error: 'No es admin' });
+    next();
+  } catch (e) { return res.status(401).json({ error: 'Token inválido' }); }
+}
+
+// Login admin
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body;
+  if (password !== ADMIN_PASSWORD) return res.status(401).json({ error: 'Contraseña incorrecta' });
+  const token = jwt.sign({ role: 'admin' }, ADMIN_JWT_SECRET, { expiresIn: '7d' });
+  res.json({ ok: true, token });
+});
+
+// Todas las reservas
+app.get('/api/admin/reservas', authAdmin, async (req, res) => {
+  try {
+    const { estado, pagina = 1 } = req.query;
+    const filtro = estado && estado !== 'todas' ? { estado } : {};
+    const total = await Reserva.countDocuments(filtro);
+    const reservas = await Reserva.find(filtro).sort({ fechaCreacion: -1 }).skip((pagina - 1) * 20).limit(20);
+    res.json({
+      total,
+      reservas: reservas.map(r => ({
+        id: r._id,
+        numero: numReserva(r.numero),
+        estado: r.estado,
+        fecha: r.datos.fecha,
+        hora: r.datos.hora,
+        origen: r.datos.origen,
+        destino: r.datos.destino,
+        pasajeros: r.datos.pasajeros,
+        precio: r.datos.precioEstimado,
+        cliente: r.datos.nombre,
+        telefono: r.datos.telefono,
+        correo: r.datos.correo,
+        notas: r.datos.observaciones,
+        vuelo: r.datos.vuelo,
+        conductor: r.conductorNombre || null,
+        fechaCreacion: r.fechaCreacion
+      }))
+    });
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Aceptar reserva como admin (sin comisión)
+app.post('/api/admin/aceptar/:id', authAdmin, async (req, res) => {
+  try {
+    const reserva = await Reserva.findById(req.params.id);
+    if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
+    if (reserva.estado !== 'pendiente') return res.status(400).json({ error: 'La reserva ya no está pendiente' });
+    reserva.estado = 'asignada';
+    reserva.conductorAsignado = OWNER_CHAT_ID;
+    reserva.conductorNombre = 'Administrador';
+    await reserva.save();
+    const eventoId = await crearEventoCalendario(reserva, 'Administrador');
+    if (eventoId) { reserva.eventoCalendarioId = eventoId; await reserva.save(); }
+    await enviarEmailConfirmacion(reserva.datos, reserva._id, 'Administrador', reserva.numero);
+    // Actualizar mensajes de conductores
+    for (const msg of (reserva.mensajesEnviados || [])) {
+      try { bot.editMessageText(`✅ Servicio aceptado por el administrador`, { chat_id: msg.chatId, message_id: msg.messageId }); } catch (e) {}
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Reasignar reserva
+app.post('/api/admin/reasignar/:id', authAdmin, async (req, res) => {
+  try {
+    const reserva = await Reserva.findById(req.params.id);
+    if (!reserva) return res.status(404).json({ error: 'No encontrada' });
+    const conductorAnterior = reserva.conductorAsignado;
+    await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
+    await borrarEventoCalendario(reserva.eventoCalendarioId);
+    for (const msg of (reserva.mensajesEnviados || [])) {
+      try { bot.editMessageText(`🔄 Servicio reasignado por el administrador`, { chat_id: msg.chatId, message_id: msg.messageId, parse_mode: 'Markdown' }); } catch (e) {}
+    }
+    if (conductorAnterior) {
+      try { bot.sendMessage(conductorAnterior, `🔄 El servicio del ${reserva.datos.fecha} a las ${reserva.datos.hora} ha sido reasignado.`); } catch (e) {}
+    }
+    reserva.estado = 'pendiente';
+    reserva.conductorAsignado = null;
+    reserva.conductorNombre = null;
+    reserva.eventoCalendarioId = null;
+    reserva.mensajesEnviados = [];
+    await reserva.save();
+    const todosActivos = await Conductor.find({ activo: true });
+    const sinAnterior = todosActivos.filter(c => String(c.chatId) !== String(conductorAnterior));
+    await enviarReservaA(reserva, sinAnterior);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Cancelar reserva
+app.post('/api/admin/cancelar/:id', authAdmin, async (req, res) => {
+  try {
+    const reserva = await Reserva.findById(req.params.id);
+    if (!reserva) return res.status(404).json({ error: 'No encontrada' });
+    reserva.estado = 'cancelada';
+    await reserva.save();
+    await borrarEventoCalendario(reserva.eventoCalendarioId);
+    await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
+    if (reserva.conductorAsignado) {
+      try { bot.sendMessage(reserva.conductorAsignado, `❌ Servicio cancelado por el administrador\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}`); } catch (e) {}
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Todos los conductores
+app.get('/api/admin/conductores', authAdmin, async (req, res) => {
+  try {
+    const conductores = await Conductor.find().sort({ fechaRegistro: -1 }).select('-password -codigoVerificacion -codigoExpira -pushSubscription');
+    res.json(conductores.map(c => ({
+      id: c._id,
+      nombre: c.nombre,
+      licencia: c.licencia,
+      plaza: c.plaza,
+      telefono: c.telefono,
+      email: c.email,
+      aprobado: c.aprobado,
+      activo: c.activo,
+      fechaRegistro: c.fechaRegistro
+    })));
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Activar/desactivar conductor
+app.post('/api/admin/conductores/:id/toggle-activo', authAdmin, async (req, res) => {
+  try {
+    const c = await Conductor.findById(req.params.id);
+    if (!c) return res.status(404).json({ error: 'No encontrado' });
+    c.activo = !c.activo;
+    await c.save();
+    res.json({ ok: true, activo: c.activo });
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Aprobar conductor
+app.post('/api/admin/conductores/:id/aprobar', authAdmin, async (req, res) => {
+  try {
+    const c = await Conductor.findByIdAndUpdate(req.params.id, { aprobado: true }, { new: true });
+    if (!c) return res.status(404).json({ error: 'No encontrado' });
+    if (c.email && BREVO_API_KEY) {
+      try {
+        await enviarEmailBrevo({
+          sender: { name: 'Reserva Taxi Las Palmas', email: 'reservas@taxilaspalmasdegrancanaria.com' },
+          to: [{ email: c.email, name: c.nombre }],
+          subject: '✅ Tu cuenta ha sido aprobada',
+          htmlContent: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px"><h2 style="color:#f5c400">🚖 ¡Bienvenido, ${c.nombre}!</h2><p>Tu cuenta ha sido aprobada. Ya puedes entrar en la app:</p><a href="https://reservataxilaspalmas.com/conductores" style="display:inline-block;background:#f5c400;color:#000;padding:12px 24px;border-radius:8px;font-weight:bold;text-decoration:none;margin-top:16px">Entrar a la app</a></div>`
+        });
+      } catch (e) {}
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Eliminar conductor
+app.delete('/api/admin/conductores/:id', authAdmin, async (req, res) => {
+  try {
+    await Conductor.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Comisiones pendientes por conductor
+app.get('/api/admin/comisiones', authAdmin, async (req, res) => {
+  try {
+    const comisiones = await Comision.find({ pagada: false }).sort({ fechaCreacion: -1 });
+    const porConductor = {};
+    for (const c of comisiones) {
+      if (!porConductor[c.conductorNombre]) porConductor[c.conductorNombre] = { nombre: c.conductorNombre, chatId: c.conductorChatId, total: 0, servicios: 0 };
+      porConductor[c.conductorNombre].total += c.comision;
+      porConductor[c.conductorNombre].servicios++;
+    }
+    res.json(Object.values(porConductor).map(c => ({ ...c, total: parseFloat(c.total.toFixed(2)) })));
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Marcar comisiones de un conductor como pagadas
+app.post('/api/admin/comisiones/pagar/:chatId', authAdmin, async (req, res) => {
+  try {
+    await Comision.updateMany({ conductorChatId: req.params.chatId, pagada: false }, { pagada: true });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Estadísticas rápidas
+app.get('/api/admin/stats', authAdmin, async (req, res) => {
+  try {
+    const [pendientes, asignadas, hoy, totalMes] = await Promise.all([
+      Reserva.countDocuments({ estado: 'pendiente' }),
+      Reserva.countDocuments({ estado: 'asignada' }),
+      Reserva.countDocuments({ fechaCreacion: { $gte: new Date(new Date().setHours(0,0,0,0)) } }),
+      Comision.aggregate([{ $match: { pagada: false } }, { $group: { _id: null, total: { $sum: '$comision' } } }])
+    ]);
+    res.json({
+      pendientes,
+      asignadas,
+      hoy,
+      comisionesPendientes: totalMes[0] ? parseFloat(totalMes[0].total.toFixed(2)) : 0
+    });
+  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Servir panel admin
+app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+app.get('/admin.html', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+
