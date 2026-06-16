@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="theme-color" content="#111111">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Conductores — Reserva Taxi Las Palmas</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/favicon.ico">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --amarillo: #f5c400;
+      --bg: #0f0f0f;
+      --card: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #f0f0f0;
+      --muted: #888;
+      --verde: #4caf50;
+      --rojo: #e53935;
+      --azul: #2196f3;
+    }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* HEADER */
+    .header { background: #111; border-bottom: 1px solid var(--border); padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+    .header-logo span { font-size: 15px; font-weight: 700; color: var(--amarillo); }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    .badge-nombre { font-size: 13px; color: var(--muted); }
+    .btn-salir { background: none; border: 1px solid var(--border); color: var(--muted); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+    .btn-salir:hover { border-color: var(--rojo); color: var(--rojo); }
+
+    /* TABS */
+    .tabs { display: flex; background: #111; border-bottom: 1px solid var(--border); overflow-x: auto; }
+    .tab { flex: 1; min-width: 80px; padding: 13px 8px; text-align: center; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; transition: all .2s; white-space: nowrap; }
+    .tab.active { color: var(--amarillo); border-bottom-color: var(--amarillo); }
+
+    /* CONTENIDO */
+    .content { padding: 16px; max-width: 600px; margin: 0 auto; }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* AUTH */
+    .auth-box { max-width: 400px; margin: 32px auto; background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 28px 22px; }
+    .auth-logo { text-align: center; margin-bottom: 22px; }
+    .auth-logo .emoji { font-size: 44px; }
+    .auth-logo h1 { font-size: 19px; color: var(--amarillo); margin-top: 8px; }
+    .auth-logo p { font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .auth-tabs { display: flex; gap: 8px; margin-bottom: 22px; }
+    .auth-tab { flex: 1; padding: 10px; text-align: center; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600; border: 1px solid var(--border); color: var(--muted); transition: all .2s; }
+    .auth-tab.active { background: var(--amarillo); color: #000; border-color: var(--amarillo); }
+    .auth-form { display: none; }
+    .auth-form.active { display: block; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .5px; }
+    .field input { width: 100%; background: #111; border: 1px solid var(--border); color: var(--text); padding: 11px 13px; border-radius: 10px; font-size: 15px; outline: none; transition: border .2s; }
+    .field input:focus { border-color: var(--amarillo); }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .btn-primary { width: 100%; background: var(--amarillo); color: #000; border: none; padding: 13px; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 6px; transition: opacity .2s; }
+    .btn-primary:hover { opacity: .9; }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-secondary { width: 100%; background: none; color: var(--amarillo); border: 1px solid var(--amarillo); padding: 11px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 8px; transition: all .2s; }
+    .btn-secondary:hover { background: var(--amarillo); color: #000; }
+    .msg { margin-top: 10px; padding: 11px; border-radius: 10px; font-size: 13px; text-align: center; display: none; }
+    .msg.ok { background: #1a3a1a; color: #7dd87d; display: block; }
+    .msg.err { background: #3a1a1a; color: #e57373; display: block; }
+
+    /* CÓDIGO */
+    .codigo-box { text-align: center; }
+    .codigo-box p { color: var(--muted); font-size: 14px; margin-bottom: 20px; line-height: 1.5; }
+    .codigo-input { display: flex; gap: 8px; justify-content: center; margin-bottom: 20px; }
+    .codigo-input input { width: 44px; height: 52px; text-align: center; font-size: 20px; font-weight: 700; background: #111; border: 1px solid var(--border); color: var(--text); border-radius: 10px; outline: none; }
+    .codigo-input input:focus { border-color: var(--amarillo); }
+    .link-reenviar { font-size: 13px; color: var(--muted); cursor: pointer; margin-top: 12px; display: inline-block; }
+    .link-reenviar:hover { color: var(--amarillo); }
+
+    /* TARJETAS SERVICIO */
+    .section-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px; margin-top: 4px; display: flex; justify-content: space-between; align-items: center; }
+    .btn-refresh { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; }
+    .sin-servicios { text-align: center; padding: 48px 20px; color: var(--muted); }
+    .sin-servicios .emoji { font-size: 40px; display: block; margin-bottom: 12px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 15px; margin-bottom: 12px; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .card-num { font-size: 12px; font-weight: 700; color: var(--amarillo); background: #2a2000; padding: 3px 10px; border-radius: 20px; }
+    .card-hora { font-size: 13px; color: var(--muted); }
+    .card-ruta { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+    .card-ruta .parada { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+    .dot.verde { background: var(--verde); }
+    .dot.rojo { background: var(--rojo); }
+    .card-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+    .chip { font-size: 12px; color: var(--muted); background: #222; padding: 4px 10px; border-radius: 20px; }
+    .chip strong { color: var(--text); }
+    .card-notas { font-size: 12px; color: var(--muted); background: #222; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; line-height: 1.4; }
+    .btn-aceptar { width: 100%; background: var(--verde); color: #fff; border: none; padding: 12px; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; transition: opacity .2s; }
+    .btn-aceptar:hover { opacity: .85; }
+    .btn-aceptar:disabled { opacity: .4; cursor: not-allowed; }
+    .badge-estado { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 700; }
+    .badge-estado.asignada { background: #1a2d1a; color: #7dd87d; }
+    .badge-estado.completada { background: #1a1a2d; color: #7d9dd8; }
+
+    /* COMISIONES */
+    .resumen-box { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 16px; text-align: center; }
+    .resumen-box .total { font-size: 36px; font-weight: 700; color: var(--amarillo); }
+    .resumen-box .label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .comision-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .comision-row:last-child { border-bottom: none; }
+    .comision-info { font-size: 13px; color: var(--muted); }
+    .comision-info strong { color: var(--text); display: block; font-size: 14px; }
+    .comision-importe { text-align: right; }
+    .comision-importe .importe { font-size: 16px; font-weight: 700; color: var(--rojo); }
+    .comision-importe .pagada-badge { font-size: 11px; color: var(--verde); display: block; }
+
+    /* PERFIL */
+    .perfil-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+    .perfil-avatar { width: 64px; height: 64px; background: #2a2000; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 16px; }
+    .perfil-dato { display: flex; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+    .perfil-dato:last-child { border-bottom: none; }
+    .perfil-dato .key { color: var(--muted); }
+    .perfil-dato .val { font-weight: 600; }
+    .push-banner { background: #1a2d1a; border: 1px solid #2d4a2d; border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+    .push-banner .ico { font-size: 24px; }
+    .push-banner .txt { flex: 1; font-size: 13px; color: #aaa; line-height: 1.4; }
+    .push-banner .txt strong { color: var(--text); display: block; margin-bottom: 2px; }
+    .btn-push { background: var(--verde); color: #fff; border: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+
+    /* LOADING */
+    .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid #333; border-top-color: var(--amarillo); border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-center { display: flex; justify-content: center; padding: 40px; }
+
+    /* INSTALL BANNER */
+    .install-banner { position: fixed; bottom: 0; left: 0; right: 0; background: #1a1a1a; border-top: 1px solid var(--amarillo); padding: 14px 16px; display: flex; align-items: center; gap: 12px; z-index: 200; transform: translateY(100%); transition: transform .3s ease; }
+    .install-banner.visible { transform: translateY(0); }
+    .install-banner .ico { font-size: 28px; flex-shrink: 0; }
+    .install-banner .txt { flex: 1; font-size: 13px; line-height: 1.4; }
+    .install-banner .txt strong { color: var(--amarillo); display: block; margin-bottom: 2px; }
+    .install-banner .txt span { color: var(--muted); }
+    .btn-instalar { background: var(--amarillo); color: #000; border: none; padding: 9px 14px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .btn-cerrar-banner { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 4px; flex-shrink: 0; }
+
+    /* PENDIENTE */
+    .pendiente-box { text-align: center; padding: 48px 20px; }
+    .pendiente-box .emoji { font-size: 52px; display: block; margin-bottom: 16px; }
+    .pendiente-box h2 { color: var(--amarillo); margin-bottom: 8px; }
+    .pendiente-box p { color: var(--muted); font-size: 14px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+
+<!-- PANTALLA AUTH -->
+<div id="screen-auth">
+  <div class="content">
+    <div class="auth-box">
+      <div class="auth-logo">
+        <div class="emoji">🚖</div>
+        <h1>Portal Conductores</h1>
+        <p>Reserva Taxi Las Palmas</p>
+      </div>
+      <div class="auth-tabs">
+        <div class="auth-tab active" onclick="switchAuthTab('login')">Entrar</div>
+        <div class="auth-tab" onclick="switchAuthTab('registro')">Registrarse</div>
+      </div>
+
+      <!-- LOGIN -->
+      <div class="auth-form active" id="form-login">
+        <div class="field"><label>Correo electrónico</label><input type="email" id="login-email" placeholder="tu@email.com" autocomplete="email"></div>
+        <div class="field"><label>Contraseña</label><input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')solicitarCodigo()"></div>
+        <button class="btn-primary" onclick="solicitarCodigo()">Continuar →</button>
+        <div class="msg" id="msg-login"></div>
+      </div>
+
+      <!-- CÓDIGO -->
+      <div class="auth-form" id="form-codigo">
+        <div class="codigo-box">
+          <p>Hemos enviado un código de 6 dígitos a tu correo electrónico. Introdúcelo aquí:</p>
+          <div class="codigo-input">
+            <input type="tel" maxlength="1" id="c1" oninput="avanzarCodigo(this,'c2')">
+            <input type="tel" maxlength="1" id="c2" oninput="avanzarCodigo(this,'c3')">
+            <input type="tel" maxlength="1" id="c3" oninput="avanzarCodigo(this,'c4')">
+            <input type="tel" maxlength="1" id="c4" oninput="avanzarCodigo(this,'c5')">
+            <input type="tel" maxlength="1" id="c5" oninput="avanzarCodigo(this,'c6')">
+            <input type="tel" maxlength="1" id="c6" oninput="if(this.value)verificarCodigo()">
+          </div>
+          <button class="btn-primary" onclick="verificarCodigo()">Verificar código</button>
+          <div class="msg" id="msg-codigo"></div>
+          <span class="link-reenviar" onclick="solicitarCodigo()">¿No recibiste el código? Reenviar</span>
+        </div>
+      </div>
+
+      <!-- REGISTRO -->
+      <div class="auth-form" id="form-registro">
+        <div class="field"><label>Nombre completo</label><input type="text" id="reg-nombre" placeholder="Tu nombre completo"></div>
+        <div class="field-row">
+          <div class="field"><label>Teléfono</label><input type="tel" id="reg-telefono" placeholder="628 000 000"></div>
+          <div class="field"><label>Nº Licencia</label><input type="text" id="reg-licencia" placeholder="1234"></div>
+        </div>
+        <div class="field"><label>Nº Plaza del vehículo</label><input type="text" id="reg-plaza" placeholder="GC-1234"></div>
+        <div class="field"><label>Correo electrónico</label><input type="email" id="reg-email" placeholder="tu@email.com"></div>
+        <div class="field"><label>Contraseña (mín. 6 caracteres)</label><input type="password" id="reg-password" placeholder="••••••••"></div>
+        <button class="btn-primary" onclick="registrarse()">Solicitar acceso</button>
+        <div class="msg" id="msg-registro"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PANTALLA PENDIENTE -->
+<div id="screen-pendiente" style="display:none">
+  <div class="content">
+    <div class="pendiente-box">
+      <span class="emoji">⏳</span>
+      <h2>Solicitud enviada</h2>
+      <p>Tu registro ha sido enviado al administrador.<br>Recibirás un email cuando tu cuenta sea aprobada.</p>
+      <br>
+      <button class="btn-secondary" style="max-width:200px;margin:0 auto" onclick="cerrarSesion()">Volver al inicio</button>
+    </div>
+  </div>
+</div>
+
+<!-- PANTALLA PRINCIPAL -->
+<div id="screen-app" style="display:none">
+  <div class="header">
+    <div class="header-logo"><span>🚖 Taxi LPA</span></div>
+    <div class="header-right">
+      <span class="badge-nombre" id="badge-nombre"></span>
+      <button class="btn-salir" onclick="cerrarSesion()">Salir</button>
+    </div>
+  </div>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('disponibles')">🟢 Disponibles</div>
+    <div class="tab" onclick="switchTab('mis-servicios')">📋 Mis servicios</div>
+    <div class="tab" onclick="switchTab('comisiones')">💰 Comisiones</div>
+    <div class="tab" onclick="switchTab('perfil')">👤 Perfil</div>
+  </div>
+  <div class="content">
+
+    <!-- DISPONIBLES -->
+    <div class="page active" id="page-disponibles">
+      <div class="section-title">
+        <span>Servicios pendientes</span>
+        <button class="btn-refresh" onclick="cargarDisponibles()" title="Actualizar">🔄</button>
+      </div>
+      <div id="lista-disponibles"><div class="loading-center"><div class="spinner"></div></div></div>
+    </div>
+
+    <!-- MIS SERVICIOS -->
+    <div class="page" id="page-mis-servicios">
+      <div class="section-title">
+        <span>Servicios asignados a ti</span>
+        <button class="btn-refresh" onclick="cargarMisServicios()" title="Actualizar">🔄</button>
+      </div>
+      <div id="lista-mis-servicios"><div class="loading-center"><div class="spinner"></div></div></div>
+    </div>
+
+    <!-- COMISIONES -->
+    <div class="page" id="page-comisiones">
+      <div id="bloque-comisiones"><div class="loading-center"><div class="spinner"></div></div></div>
+    </div>
+
+    <!-- PERFIL -->
+    <div class="page" id="page-perfil">
+      <div id="bloque-perfil"><div class="loading-center"><div class="spinner"></div></div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- BANNER INSTALACIÓN -->
+<div class="install-banner" id="install-banner">
+  <span class="ico">📲</span>
+  <div class="txt">
+    <strong>Instala la app</strong>
+    <span id="install-instruccion">Para recibir notificaciones de nuevos servicios</span>
+  </div>
+  <button class="btn-instalar" id="btn-instalar" onclick="instalarApp()">Instalar</button>
+  <button class="btn-cerrar-banner" onclick="cerrarBanner()">×</button>
+</div>
+
+<script>
+let emailLogin = '';
+let perfilCargado = false;
+
+// ====== AUTH ======
+function switchAuthTab(tab) {
+  document.querySelectorAll('.auth-tab').forEach((t,i) => t.classList.toggle('active', i === (tab==='login'?0:1)));
+  document.getElementById('form-login').classList.toggle('active', tab==='login');
+  document.getElementById('form-registro').classList.toggle('active', tab==='registro');
+  document.getElementById('form-codigo').classList.remove('active');
+}
+
+function mostrarMsg(id, texto, tipo) {
+  const el = document.getElementById(id);
+  el.textContent = texto; el.className = 'msg ' + tipo;
+}
+
+async function solicitarCodigo() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) return mostrarMsg('msg-login','Rellena todos los campos','err');
+  const btn = document.querySelector('#form-login .btn-primary');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  try {
+    const r = await fetch('/api/conductores/solicitar-codigo', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+    const d = await r.json();
+    if (!r.ok) { mostrarMsg('msg-login', d.error||'Error','err'); btn.disabled=false; btn.textContent='Continuar →'; return; }
+    emailLogin = email;
+    document.getElementById('form-login').classList.remove('active');
+    document.getElementById('form-codigo').classList.add('active');
+    document.getElementById('c1').focus();
+    btn.disabled=false; btn.textContent='Continuar →';
+  } catch(e) { mostrarMsg('msg-login','Error de conexión','err'); btn.disabled=false; btn.textContent='Continuar →'; }
+}
+
+function avanzarCodigo(input, nextId) {
+  if (input.value && nextId) document.getElementById(nextId).focus();
+}
+
+async function verificarCodigo() {
+  const codigo = ['c1','c2','c3','c4','c5','c6'].map(id=>document.getElementById(id).value).join('');
+  if (codigo.length!==6) return mostrarMsg('msg-codigo','Introduce los 6 dígitos','err');
+  try {
+    const r = await fetch('/api/conductores/verificar-codigo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:emailLogin,codigo})});
+    const d = await r.json();
+    if (!r.ok) { mostrarMsg('msg-codigo',d.error||'Código incorrecto','err'); return; }
+    localStorage.setItem('token', d.token);
+    localStorage.setItem('nombre', d.nombre);
+    iniciarApp(d.nombre);
+  } catch(e) { mostrarMsg('msg-codigo','Error de conexión','err'); }
+}
+
+async function registrarse() {
+  const datos = {
+    nombre: document.getElementById('reg-nombre').value.trim(),
+    telefono: document.getElementById('reg-telefono').value.trim(),
+    licencia: document.getElementById('reg-licencia').value.trim(),
+    plaza: document.getElementById('reg-plaza').value.trim(),
+    email: document.getElementById('reg-email').value.trim(),
+    password: document.getElementById('reg-password').value
+  };
+  if (Object.values(datos).some(v=>!v)) return mostrarMsg('msg-registro','Rellena todos los campos','err');
+  if (datos.password.length<6) return mostrarMsg('msg-registro','La contraseña debe tener al menos 6 caracteres','err');
+  const btn = document.querySelector('#form-registro .btn-primary');
+  btn.disabled=true; btn.textContent='Enviando...';
+  try {
+    const r = await fetch('/api/conductores/registro',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(datos)});
+    const d = await r.json();
+    if (!r.ok) { mostrarMsg('msg-registro',d.error||'Error','err'); btn.disabled=false; btn.textContent='Solicitar acceso'; return; }
+    mostrarMsg('msg-registro','✅ Solicitud enviada. Recibirás un email cuando seas aprobado.','ok');
+    btn.textContent='Enviado ✅';
+  } catch(e) { mostrarMsg('msg-registro','Error de conexión','err'); btn.disabled=false; btn.textContent='Solicitar acceso'; }
+}
+
+function cerrarSesion() {
+  localStorage.removeItem('token'); localStorage.removeItem('nombre'); location.reload();
+}
+
+// ====== APP ======
+function iniciarApp(nombre) {
+  document.getElementById('screen-auth').style.display='none';
+  document.getElementById('screen-pendiente').style.display='none';
+  document.getElementById('screen-app').style.display='block';
+  document.getElementById('badge-nombre').textContent=nombre;
+  cargarDisponibles();
+  registrarPush();
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['disponibles','mis-servicios','comisiones','perfil'][i]===tab));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-'+tab).classList.add('active');
+  if (tab==='disponibles') cargarDisponibles();
+  else if (tab==='mis-servicios') cargarMisServicios();
+  else if (tab==='comisiones') cargarComisiones();
+  else if (tab==='perfil') cargarPerfil();
+}
+
+function token() { return localStorage.getItem('token'); }
+
+function cardServicio(s, conBoton) {
+  const fechaObj = s.fecha ? new Date(s.fecha+'T'+s.hora) : null;
+  const fechaStr = fechaObj ? fechaObj.toLocaleDateString('es-ES',{weekday:'short',day:'numeric',month:'short'}) : '-';
+  const notasHtml = s.notas ? `<div class="card-notas">📝 ${s.notas}</div>` : '';
+  const accion = conBoton
+    ? `<button class="btn-aceptar" onclick="aceptarServicio('${s.id}',this)">✅ Aceptar servicio</button>`
+    : `<span class="badge-estado ${s.estado||'asignada'}">${s.estado==='completada'?'Completado':'Asignado'}</span>`;
+  return `<div class="card" id="card-${s.id}">
+    <div class="card-header">
+      <span class="card-num">${s.numero||'RT-??'}</span>
+      <span class="card-hora">📅 ${fechaStr} · ${s.hora}</span>
+    </div>
+    <div class="card-ruta">
+      <div class="parada"><span class="dot verde"></span><span>${s.origen}</span></div>
+      <div class="parada"><span class="dot rojo"></span><span>${s.destino}</span></div>
+    </div>
+    <div class="card-meta">
+      <span class="chip">👥 <strong>${s.pasajeros}</strong> pax</span>
+      ${s.precio?`<span class="chip">💰 <strong>${s.precio} €</strong></span>`:''}
+    </div>
+    ${notasHtml}${accion}
+  </div>`;
+}
+
+async function cargarDisponibles() {
+  const lista = document.getElementById('lista-disponibles');
+  lista.innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r = await fetch('/api/conductores/servicios',{headers:{Authorization:'Bearer '+token()}});
+    if (r.status===401){cerrarSesion();return;}
+    const servicios = await r.json();
+    lista.innerHTML = servicios.length ? servicios.map(s=>cardServicio(s,true)).join('') : '<div class="sin-servicios"><span class="emoji">🟡</span>No hay servicios disponibles ahora mismo</div>';
+  } catch(e) { lista.innerHTML='<div class="sin-servicios"><span class="emoji">❌</span>Error al cargar</div>'; }
+}
+
+async function cargarMisServicios() {
+  const lista = document.getElementById('lista-mis-servicios');
+  lista.innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r = await fetch('/api/conductores/mis-servicios',{headers:{Authorization:'Bearer '+token()}});
+    if (r.status===401){cerrarSesion();return;}
+    const servicios = await r.json();
+    lista.innerHTML = servicios.length ? servicios.map(s=>cardServicio(s,false)).join('') : '<div class="sin-servicios"><span class="emoji">📋</span>No tienes servicios asignados</div>';
+  } catch(e) { lista.innerHTML='<div class="sin-servicios"><span class="emoji">❌</span>Error al cargar</div>'; }
+}
+
+async function aceptarServicio(id, btn) {
+  btn.disabled=true; btn.textContent='Aceptando...';
+  try {
+    const r = await fetch('/api/conductores/aceptar/'+id,{method:'POST',headers:{Authorization:'Bearer '+token()}});
+    const d = await r.json();
+    if (!r.ok){alert(d.error||'No se pudo aceptar');btn.disabled=false;btn.textContent='✅ Aceptar servicio';return;}
+    const card=document.getElementById('card-'+id);
+    if(card){card.style.opacity='.4';btn.textContent='✅ Aceptado';}
+    setTimeout(cargarDisponibles,1500);
+  } catch(e){alert('Error de conexión');btn.disabled=false;btn.textContent='✅ Aceptar servicio';}
+}
+
+async function cargarComisiones() {
+  const bloque = document.getElementById('bloque-comisiones');
+  bloque.innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r = await fetch('/api/conductores/comisiones',{headers:{Authorization:'Bearer '+token()}});
+    if (r.status===401){cerrarSesion();return;}
+    const d = await r.json();
+    const filas = d.comisiones.length ? d.comisiones.map(c=>{
+      const fecha = new Date(c.fecha).toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'});
+      return `<div class="comision-row">
+        <div class="comision-info"><strong>${c.mes}</strong>${fecha} · Carrera ${c.precioCarrera}€</div>
+        <div class="comision-importe">
+          <span class="importe">${c.comision}€</span>
+          ${c.pagada?'<span class="pagada-badge">✅ Pagada</span>':''}
+        </div>
+      </div>`;
+    }).join('') : '<div class="sin-servicios"><span class="emoji">💰</span>Sin comisiones registradas</div>';
+    bloque.innerHTML=`
+      <div class="resumen-box">
+        <div class="total">${d.totalPendiente}€</div>
+        <div class="label">Pendiente de cobro</div>
+      </div>
+      <div class="card">${filas}</div>`;
+  } catch(e){bloque.innerHTML='<div class="sin-servicios"><span class="emoji">❌</span>Error al cargar</div>';}
+}
+
+async function cargarPerfil() {
+  if(perfilCargado) return;
+  const bloque = document.getElementById('bloque-perfil');
+  bloque.innerHTML='<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r = await fetch('/api/conductores/perfil',{headers:{Authorization:'Bearer '+token()}});
+    if (r.status===401){cerrarSesion();return;}
+    const p = await r.json();
+    const pushActivo = localStorage.getItem('push_activo')==='1';
+    bloque.innerHTML=`
+      ${!pushActivo?`<div class="push-banner">
+        <span class="ico">🔔</span>
+        <div class="txt"><strong>Activa las notificaciones</strong>Recibe avisos cuando llegue un nuevo servicio</div>
+        <button class="btn-push" onclick="activarPush()">Activar</button>
+      </div>`:'<div style="background:#1a2d1a;border:1px solid #2d4a2d;border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#7dd87d;">🔔 Notificaciones activadas ✅</div>'}
+      <div class="perfil-card">
+        <div class="perfil-avatar">🚖</div>
+        <div class="perfil-dato"><span class="key">Nombre</span><span class="val">${p.nombre}</span></div>
+        <div class="perfil-dato"><span class="key">Teléfono</span><span class="val">${p.telefono||'-'}</span></div>
+        <div class="perfil-dato"><span class="key">Email</span><span class="val">${p.email}</span></div>
+        <div class="perfil-dato"><span class="key">Licencia</span><span class="val">${p.licencia}</span></div>
+        <div class="perfil-dato"><span class="key">Plaza</span><span class="val">${p.plaza||'-'}</span></div>
+      </div>
+      <div class="perfil-card">
+        <p style="font-size:14px;font-weight:700;margin-bottom:14px">🔒 Cambiar contraseña</p>
+        <div class="field"><label>Contraseña actual</label><input type="password" id="pwd-actual" placeholder="••••••••"></div>
+        <div class="field"><label>Nueva contraseña</label><input type="password" id="pwd-nueva" placeholder="••••••••"></div>
+        <div class="field"><label>Repetir nueva contraseña</label><input type="password" id="pwd-repetir" placeholder="••••••••"></div>
+        <button class="btn-primary" onclick="cambiarPassword()">Cambiar contraseña</button>
+        <div class="msg" id="msg-pwd"></div>
+      </div>`;
+    perfilCargado=true;
+  } catch(e){bloque.innerHTML='<div class="sin-servicios"><span class="emoji">❌</span>Error al cargar</div>';}
+}
+
+async function cambiarPassword() {
+  const actual=document.getElementById('pwd-actual').value;
+  const nueva=document.getElementById('pwd-nueva').value;
+  const repetir=document.getElementById('pwd-repetir').value;
+  if (!actual||!nueva||!repetir) return mostrarMsg('msg-pwd','Rellena todos los campos','err');
+  if (nueva!==repetir) return mostrarMsg('msg-pwd','Las contraseñas no coinciden','err');
+  if (nueva.length<6) return mostrarMsg('msg-pwd','Mínimo 6 caracteres','err');
+  const btn=document.querySelector('#bloque-perfil .btn-primary');
+  btn.disabled=true; btn.textContent='Guardando...';
+  try {
+    const r=await fetch('/api/conductores/cambiar-password',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({actual,nueva})});
+    const d=await r.json();
+    if(!r.ok){mostrarMsg('msg-pwd',d.error||'Error','err');btn.disabled=false;btn.textContent='Cambiar contraseña';return;}
+    mostrarMsg('msg-pwd','✅ Contraseña cambiada correctamente','ok');
+    btn.disabled=false; btn.textContent='Cambiar contraseña';
+    document.getElementById('pwd-actual').value='';
+    document.getElementById('pwd-nueva').value='';
+    document.getElementById('pwd-repetir').value='';
+  } catch(e){mostrarMsg('msg-pwd','Error de conexión','err');btn.disabled=false;btn.textContent='Cambiar contraseña';}
+}
+
+// ====== PUSH ======
+async function registrarPush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  if (localStorage.getItem('push_activo')==='1') {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) return;
+    } catch(e){}
+  }
+}
+
+async function activarPush() {
+  if (!('serviceWorker' in navigator)||!('PushManager' in window)) return alert('Tu navegador no soporta notificaciones push');
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm!=='granted') return alert('Necesitas dar permiso para las notificaciones');
+    const r = await fetch('/api/conductores/vapid-key');
+    const {publicKey} = await r.json();
+    if (!publicKey) return;
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: urlBase64ToUint8Array(publicKey)});
+    await fetch('/api/conductores/push-subscribe',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({subscription:sub})});
+    localStorage.setItem('push_activo','1');
+    perfilCargado=false;
+    cargarPerfil();
+  } catch(e){ console.error('Error activando push:',e); }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding='='.repeat((4-base64String.length%4)%4);
+  const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');
+  const rawData=window.atob(base64);
+  return Uint8Array.from([...rawData].map(c=>c.charCodeAt(0)));
+}
+
+// ====== BANNER INSTALACIÓN ======
+let deferredPrompt = null;
+const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const esAndroid = /android/i.test(navigator.userAgent);
+const esPWA = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  if (!esPWA && !localStorage.getItem('banner_cerrado')) mostrarBanner('android');
+});
+
+function mostrarBanner(tipo) {
+  const banner = document.getElementById('install-banner');
+  const instruccion = document.getElementById('install-instruccion');
+  const btnInstalar = document.getElementById('btn-instalar');
+  if (tipo === 'ios') {
+    instruccion.textContent = 'Pulsa el botón compartir de Safari y selecciona "Añadir a pantalla de inicio"';
+    btnInstalar.style.display = 'none';
+  } else {
+    instruccion.textContent = 'Instala la app para recibir notificaciones cuando llegue un servicio';
+    btnInstalar.style.display = 'block';
+  }
+  setTimeout(() => banner.classList.add('visible'), 500);
+}
+
+async function instalarApp() {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  if (outcome === 'accepted') {
+    localStorage.setItem('banner_cerrado', '1');
+    document.getElementById('install-banner').classList.remove('visible');
+  }
+}
+
+function cerrarBanner() {
+  document.getElementById('install-banner').classList.remove('visible');
+  localStorage.setItem('banner_cerrado', '1');
+}
+
+// En iOS mostrar el banner manualmente si no está instalada
+if (esIOS && !esPWA && !localStorage.getItem('banner_cerrado')) {
+  setTimeout(() => mostrarBanner('ios'), 2000);
+}
+
+// ====== SERVICE WORKER ======
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(e => console.log('SW error:', e));
+}
+
+// ====== INICIO ======
+const t = localStorage.getItem('token');
+if (t) {
+  const nombre = localStorage.getItem('nombre')||'Conductor';
+  iniciarApp(nombre);
+}
+
+// Refrescar disponibles cada 30 segundos
+setInterval(()=>{
+  if(document.getElementById('screen-app').style.display!=='none'){
+    if(document.getElementById('page-disponibles').classList.contains('active')) cargarDisponibles();
+  }
+},30000);
+</script>
+</body>
+</html>
