@@ -2400,3 +2400,33 @@ app.get('/api/admin/stats', authAdmin, async (req, res) => {
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('/admin.html', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
+
+// =================== VINCULAR TELEGRAM CON APP WEB ===================
+bot.onText(/\/vincular (.+)/, async (msg, match) => {
+  const chatId = String(msg.chat.id);
+  const email = (match[1] || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) {
+    return bot.sendMessage(chatId, '❌ Formato incorrecto. Usa:\n/vincular tu@email.com');
+  }
+  try {
+    const conductor = await Conductor.findOne({ email: new RegExp('^' + email + '$', 'i') });
+    if (!conductor) {
+      return bot.sendMessage(chatId, `❌ No encontré ninguna cuenta con el email *${email}*.\n\nAsegúrate de usar el mismo email con el que te registraste en la app.`, { parse_mode: 'Markdown' });
+    }
+    if (!conductor.aprobado) {
+      return bot.sendMessage(chatId, `⏳ Tu cuenta aún no ha sido aprobada por el administrador.`);
+    }
+    if (conductor.chatId && !conductor.chatId.startsWith('web_') && conductor.chatId !== chatId) {
+      return bot.sendMessage(chatId, `⚠️ Esta cuenta ya está vinculada a otro Telegram.`);
+    }
+    conductor.chatId = chatId;
+    await conductor.save();
+    bot.sendMessage(chatId, `✅ *¡Vinculado correctamente!*\n\nHola ${conductor.nombre}, ya recibirás las reservas tanto por Telegram como por la app web.\n\n💡 Escribe /start para ver tus opciones.`, { parse_mode: 'Markdown' });
+    bot.sendMessage(OWNER_CHAT_ID, `🔗 *${conductor.nombre}* ha vinculado su cuenta web con Telegram.\n📧 ${conductor.email}`, { parse_mode: 'Markdown' });
+  } catch (e) {
+    console.error('Error vinculando:', e.message);
+    bot.sendMessage(chatId, '❌ Error al vincular. Inténtalo de nuevo.');
+  }
+});
+
+app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
