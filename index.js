@@ -2393,7 +2393,30 @@ app.get('/api/admin/stats', authAdmin, async (req, res) => {
 });
 
 // Servir panel admin
-app.get('/admin', (req, res) => { res.setHeader('Cache-Control','no-store,no-cache,must-revalidate'); res.setHeader('Pragma','no-cache'); res.setHeader('Expires','0'); res.sendFile(path.join(__dirname, 'public', 'admin.html')); });
-app.get('/admin.html', (req, res) => { res.setHeader('Cache-Control','no-store,no-cache,must-revalidate'); res.setHeader('Pragma','no-cache'); res.setHeader('Expires','0'); res.sendFile(path.join(__dirname, 'public', 'admin.html')); });
+app.get('/admin', (req, res) => {
+  res.setHeader('Cache-Control','no-store,no-cache,must-revalidate,proxy-revalidate');
+  res.setHeader('Pragma','no-cache');
+  res.setHeader('Expires','0');
+  res.setHeader('Surrogate-Control','no-store');
+  const fs = require('fs');
+  const adminPath = path.join(__dirname, 'public', 'admin.html');
+  fs.readFile(adminPath, 'utf8', (err, data) => {
+    if (err) return res.status(500).send('Error loading admin panel');
+    res.setHeader('Content-Type','text/html; charset=utf-8');
+    res.send(data);
+  });
+});
+app.get('/admin.html', (req, res) => {
+  res.setHeader('Cache-Control','no-store,no-cache,must-revalidate,proxy-revalidate');
+  res.setHeader('Pragma','no-cache');
+  res.setHeader('Expires','0');
+  const fs = require('fs');
+  const adminPath = path.join(__dirname, 'public', 'admin.html');
+  fs.readFile(adminPath, 'utf8', (err, data) => {
+    if (err) return res.status(500).send('Error loading admin panel');
+    res.setHeader('Content-Type','text/html; charset=utf-8');
+    res.send(data);
+  });
+});
 
 
