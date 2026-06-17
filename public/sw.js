@@ -1,3 +1,17 @@
+const CACHE_VERSION = 'v2';
+
+self.addEventListener('install', function(event) {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', function(event) {
+  event.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.map(key => caches.delete(key)))
+    ).then(() => self.clients.claim())
+  );
+});
+
 self.addEventListener('push', function(event) {
   let data = { title: '🚖 Nuevo servicio disponible', body: 'Abre la app para verlo' };
   try { data = JSON.parse(event.data.text()); } catch(e) {}
