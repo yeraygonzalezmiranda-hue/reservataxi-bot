@@ -2393,7 +2393,7 @@ app.get('/api/admin/stats', authAdmin, async (req, res) => {
 });
 
 // Servir panel admin
-app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
-app.get('/admin.html', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+app.get('/admin', (req, res) => { res.setHeader('Cache-Control','no-store,no-cache,must-revalidate'); res.setHeader('Pragma','no-cache'); res.setHeader('Expires','0'); res.sendFile(path.join(__dirname, 'public', 'admin.html')); });
+app.get('/admin.html', (req, res) => { res.setHeader('Cache-Control','no-store,no-cache,must-revalidate'); res.setHeader('Pragma','no-cache'); res.setHeader('Expires','0'); res.sendFile(path.join(__dirname, 'public', 'admin.html')); });
 
 
