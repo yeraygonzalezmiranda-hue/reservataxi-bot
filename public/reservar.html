@@ -453,18 +453,26 @@
 
   async function cargarConfig() {
     try {
-      const res = await fetch('/config-publica');
+      // Anti-caché para siempre obtener el valor más reciente
+      const res = await fetch('/config-publica?t=' + Date.now(), { cache: 'no-store' });
       const cfg = await res.json();
-      if (cfg && cfg.antelacionHoras) {
+      if (cfg && cfg.antelacionHoras !== undefined) {
         antelacionHoras = cfg.antelacionHoras;
-        const tag = document.querySelector('.marca .tagline');
+        // Actualizar texto tagline
+        const tag = document.querySelector('.marca .tagline') || document.querySelector('.tagline');
         if (tag && cfg.antelacionTexto) {
           tag.innerHTML = `Transfers y traslados con reserva previa · <b>mínimo ${cfg.antelacionTexto} de antelación</b>`;
         }
+        // Actualizar cualquier texto hardcodeado de "2 horas"
+        document.querySelectorAll('[data-antelacion]').forEach(el => {
+          el.textContent = cfg.antelacionTexto;
+        });
       }
-    } catch (e) {}
+    } catch (e) { console.warn('Error cargando config:', e); }
+    // Calcular fecha mínima según antelación
     const now = new Date();
-    now.setHours(now.getHours() + Math.ceil(antelacionHoras));
+    const minutos = Math.ceil(antelacionHoras * 60);
+    now.setMinutes(now.getMinutes() + minutos);
     document.getElementById('fecha').min = now.toISOString().split('T')[0];
   }
   cargarConfig();
@@ -569,7 +577,7 @@
     const ahoraCanarias = new Date(new Date().toLocaleString('en-US', { timeZone: 'Atlantic/Canary' }));
     const minutosMargen = (fechaHora - ahoraCanarias) / 60000;
     if (minutosMargen < antelacionHoras * 60) {
-      const txtAntelacion = antelacionHoras === 1 ? '1 hora' : (antelacionHoras < 1 ? (antelacionHoras * 60) + ' minutos' : antelacionHoras + ' horas');
+      const txtAntelacion = antelacionHoras < 1 ? Math.round(antelacionHoras * 60) + ' minutos' : (antelacionHoras === 1 ? '1 hora' : antelacionHoras + ' horas');
       document.getElementById('rechazo-texto').textContent = `No realizamos servicios inmediatos. Las reservas requieren un mínimo de ${txtAntelacion} de antelación. Consultas: 828 810 938.`;
       document.getElementById('formulario').style.display = 'none';
       document.getElementById('rechazo-box').style.display = 'block';
