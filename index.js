@@ -596,6 +596,8 @@ app.post('/api/push/desuscribir', async (req, res) => {
 });
 
 app.get('/config-publica', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
   res.json({ antelacionHoras: cacheConfig.antelacion, antelacionTexto: horasATexto(cacheConfig.antelacion), telefono: '828 810 938' });
 });
 
