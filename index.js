@@ -1,1869 +1,1040 @@
+// Build forzado - v2 - authAdmin fix confirmado
+const http = require('http');
+const WebSocket = require('ws');
 const express = require('express');
-const TelegramBot = require('node-telegram-bot-api');
 const mongoose = require('mongoose');
 const path = require('path');
-const fs = require('fs');
 const https = require('https');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const { google } = require('googleapis');
+const webpush = require('web-push');
 
-const TOKEN = process.env.BOT_TOKEN;
+// =================== CONFIG ===================
 const PORT = process.env.PORT || 3000;
-const OWNER_CHAT_ID = process.env.OWNER_CHAT_ID || '898842399';
 const MONGODB_URI = process.env.MONGODB_URI;
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_KEY;
-const GOOGLE_CALENDAR_CREDENTIALS = process.env.GOOGLE_CALENDAR_CREDENTIALS ||
-  'ewogICJ0eXBlIjogInNlcnZpY2VfYWNjb3VudCIsCiAgInByb2plY3RfaWQiOiAiZm9ybXVsYXJpby1kZS1yZXNlcnZhLTQ0NzcxMiIsCiAgInByaXZhdGVfa2V5X2lkIjogIjJiNGMyOGU0OTkwMDMxYTBkYjNmNDg4MTgyY2FjZWI2YzFmZGViNmUiLAogICJwcml2YXRlX2tleSI6ICItLS0tLUJFR0lOIFBSSVZBVEUgS0VZLS0tLS1cbk1JSUV2UUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktjd2dnU2pBZ0VBQW9JQkFRRElsR3ZFeVRibzdnTE5cbit0WDZaWWUvSEExeFUyU01IY0kyRmRJWDFhN1hOak9NWTlaSkwzWXc2c016THlvMStkZVI4bUQ4OHBTQVVEZS9cbml4dVAzeUpUMVdXVDF6T0JMSW5lU1Avd0lTdjM1SGoyckllSUFyRDNsTHlEWGpHMGRKRkNTQkxhaHdyVDZsNGJcbjN1VVFxNjl0TWczRkFQVlI3YjVWWXJ4dktIOWpOMW9iZDVzdmRUYmdkY2F3OXVjYWJtV0Y5VzR4U1VYeTVZUEJcbjFKMWxnVTZQQ25jQzczSFRHVHBXVStEZ1BPV3orQi91OUhBN2NsYURuL2dPcFZ3OTBJYXZnSFRSeXBrNjN2aG1cbnZLRFdJL2VpMHRPd25wZk9Xc0Zia2ZSUGgzRllJQk9nc0t6U3gxRm5CcDFObEFtYmltVzY1K2hadlBLakdreVVcbmpnaStlTHdKQWdNQkFBRUNnZ0VBQ2tsYVVZaEVNYVByTHVjYlRERWl5aEZGT3plY28zYnZPOWpZb25KSitpMkVcbmJVRzlmcGxaaFY2MHpnNHdLdjU2S0xqMmNtSjZiUzR2L2JuRG14aEZhV2s3UVY2Ni9IZnRSaUlXUmhsZGFPUWxcbnMvamJKb1dFejkybjRWRFdXYnZVcTBLSS9QNEo5eDVBMzBzS0VsWEx0RnpweWQybnR5RHJMdlBXV0JrS2wycnJcbkRQR08zT1FVSk1nYlZoUk9WaEFXdVp3Tk9NYzZMNEh1Nm9OSlJZNDc1amgrNFRQc0dYRHlVcUNMcFFUVkhCVFhcbm9hWmlFcjdGRjZLVFAzdU1MdjlKTDMvaGxxQWF2SWlVVklFWS9Pc21zcDF2YlhQd1RIbUorRDNQVDRwMkwyeXlcbkM0YWc1Q1RBMVZvOU13ckZ3OERRazdsT2dTYWdIbW56YzZ3ZS95NUlGUUtCZ1FEanhHTHQ2ekNqQlJqWTZ3aXhcbnB1eG1DUDZMSVV6d1lxYU9xZTMvQzdMUGlIZUltZCs3RFlxdmw1QXF4OTMreDZqUkNQKzhjcm9xNmNwOW9nN3BcblhMVTVubEFrT2IwTnVCSVBYMjJRVGtwL2xvcjRoNlh3ZU5hYWhpUW84NW5HS3hqemlEUEhOR1p6R1pHVTJIU0lcbi9BTXZ2cVBSWm1tZE42K2JhMFBMRm1SU1p3S0JnUURoY1Uvek93NVg3R2ZQMHpZQTNnakJTREoyaVVsck54N2JcbnhZeE15WUdidE5EWkd6dWp4enFmZnNzbnNkQUFYcVF1VmsxaCtGWVVIRUl0dUFKbmFhUEhvektFV1hka0FlYURcblZwRWtCMFNEa1M3eUs5WjVKUlg2ckZDbi9aTGx3ZkhxT21oTXhHbklJVEs1bWpnTERtSmxqSnppU0oraUhobmpcblluTEpqY2ZZRHdLQmdDQUQ3dFA2aHkraSs4Y2g0bXIyUjZ4Zi8wZVhPclZmYUlJTktNTDg1Zmw5K1M5ZVViQjlcblNzMDd4S3YreEJtWC93YkMrUStJSU5yL1dkTW5BR21VK25SSzZJRHZETC9zNjd6MWNQVWp6Qno3RURXMis0QTlcbnZBeWtabGpMUlFZeDhLUHF0VHgvQlJlUXRJSHptdzNXUHF4clk2Ti9mY0QzbnR0OXpGMnpuQTVwQW9HQkFOb0dcbnNSQ0ZlN0N5bEE5Y3I2eVZEeGlHRHkrdVJBL3BoZkY3a3Qwc1FDbHE3RlFiVDBsc1F4aS9FaEI0bWJYUjBheHlcbmtISUFMcGRTWVBwQUxDc0E4b0QvSnJyeW4xRmJ1U2dwejBKdHVPZ1l2N003akRjckU1K1RpSWwrNWROSUJ3TEVcbnE5d2FWRWRWTys1ZDVIZGsyT3BtMjg3SDk0SmM1Q0tSTW53VW4wSW5Bb0dBV1JjeEJaV2FPZXVRbHRoenNMVzZcbmZOaFRhQWdka2xNVzU4OGdqVUxLaXE4bXE0MjdlWXdUOU5CS3ZCZzQ4azM2R1l3T3U4RDMrUjJla3NyT3hXcU5cblVvOEQzY3VVNUJkZHFKcnBFRlEyTmlCRzN3SmxKSXVBcTFpWjdrVVlnakVjWGZnMkNYR3RVOGJhZFNBczlWZldcblhUdTlLVG5uaTVkc25TRkVQazMyem00PVxuLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLVxuIiwKICAiY2xpZW50X2VtYWlsIjogInJlc2VydmFzLXdoYXRzYXBwQGZvcm11bGFyaW8tZGUtcmVzZXJ2YS00NDc3MTIuaWFtLmdzZXJ2aWNlYWNjb3VudC5jb20iLAogICJjbGllbnRfaWQiOiAiMTExNzE5NDY1OTI3ODc5Mjk0OTIzIiwKICAiYXV0aF91cmkiOiAiaHR0cHM6Ly9hY2NvdW50cy5nb29nbGUuY29tL28vb2F1dGgyL2F1dGgiLAogICJ0b2tlbl91cmkiOiAiaHR0cHM6Ly9vYXV0aDIuZ29vZ2xlYXBpcy5jb20vdG9rZW4iLAogICJhdXRoX3Byb3ZpZGVyX3g1MDlfY2VydF91cmwiOiAiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20vb2F1dGgyL3YxL2NlcnRzIiwKICAiY2xpZW50X3g1MDlfY2VydF91cmwiOiAiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20vcm9ib3QvdjEvbWV0YWRhdGEveDUwOS9yZXNlcnZhcy13aGF0c2FwcCU0MGZvcm11bGFyaW8tZGUtcmVzZXJ2YS00NDc3MTIuaWFtLmdzZXJ2aWNlYWNjb3VudC5jb20iLAogICJ1bml2ZXJzZV9kb21haW4iOiAiZ29vZ2xlYXBpcy5jb20iCn0K'; // JSON de la cuenta de servicio
-const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID; // p. ej. yeraygonzalezmiranda@gmail.com
+const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID;
+const GOOGLE_CALENDAR_CREDENTIALS = process.env.GOOGLE_CALENDAR_CREDENTIALS || '';
+const JWT_SECRET = process.env.JWT_SECRET || 'taxilaspalmas2026';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin2026';
+const APP_URL = process.env.APP_URL || '';
 const COMISION_PORCENTAJE = 10;
-const MINIMO_HORAS_ANTELACION = 2; // valor inicial; el real se gestiona en cacheConfig.antelacion
-const LICENCIA_PRIORITARIA = '1374'; // Conductor con prioridad: recibe la reserva primero, sin comisión
-const MINUTOS_PRIORIDAD = 2; // Minutos que tiene el conductor prioritario antes de repartir al resto
+const LICENCIA_PRIORITARIA = process.env.LICENCIA_PRIORITARIA || '1374';
+// MINUTOS_PRIORIDAD ahora configurable via cacheConfig.prioridadMinutos
 
-
-// Configuración ajustable en memoria (se rellena desde la BD al arrancar)
-let cacheConfig = { antelacion: 2, cancelacion: 0.5 };
-
-if (!TOKEN) {
-  console.error('ERROR: Falta la variable BOT_TOKEN en Railway.');
-  process.exit(1);
+// =================== WEB PUSH (notificaciones reales, con pantalla bloqueada) ===================
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
+const VAPID_EMAIL = process.env.VAPID_EMAIL || 'mailto:reservas@taxilaspalmasdegrancanaria.com';
+let pushDisponible = false;
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  try {
+    webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+    pushDisponible = true;
+  } catch(e) { console.error('⚠️ Error configurando VAPID:', e.message); }
+} else {
+  console.warn('⚠️ AVISO: Notificaciones push reales desactivadas (faltan VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY).');
 }
 
-// =================== ANTELACIÓN MÍNIMA ===================
+if (!MONGODB_URI) { console.error('ERROR: Falta MONGODB_URI'); process.exit(1); }
 
-// Hora actual en Canarias (el servidor de Railway funciona en UTC)
+let cacheConfig = { antelacion: 2, cancelacion: 0.5, prioridadMinutos: 2 };
+
+process.on('unhandledRejection', (r) => console.error('Promesa rechazada:', r));
+process.on('uncaughtException', (e) => console.error('Excepción no capturada:', e.message));
+
+// =================== HELPERS TIEMPO ===================
 function ahoraCanarias() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Atlantic/Canary' }));
 }
+function cumpleAntelacion(fecha, hora) {
+  try {
+    const f = new Date(`${fecha}T${hora}:00`);
+    return !isNaN(f) && (f - ahoraCanarias()) / 60000 >= cacheConfig.antelacion * 60;
+  } catch(e) { return false; }
+}
+function horasATexto(h) {
+  if (h < 1) return `${Math.round(h * 60)} minutos`;
+  if (h === 1) return '1 hora';
+  return `${h} horas`;
+}
+function numReserva(n) { return n ? 'RT-' + String(n).padStart(4, '0') : ''; }
+function normalizarLicencia(v) { return String(v || '').replace(/[^0-9]/g, ''); }
+function esLicenciaPrioritaria(licencia) { return normalizarLicencia(licencia) === normalizarLicencia(LICENCIA_PRIORITARIA); }
+
+async function comprobarDiaBloqueado(fecha, hora) {
+  const festivoDoc = await Festivo.findOne({ fecha });
+  if (!festivoDoc || festivoDoc.tipo !== 'sin_servicio') return null;
+  // Sin rango de horas = bloqueado el día completo
+  if (!festivoDoc.horaInicio || !festivoDoc.horaFin) {
+    return `No realizamos servicios el día ${fecha}${festivoDoc.descripcion ? ' (' + festivoDoc.descripcion + ')' : ''}. Consultas: 828 810 938.`;
+  }
+  // Con rango de horas: solo bloquea si la hora solicitada cae dentro del rango
+  if (hora >= festivoDoc.horaInicio && hora <= festivoDoc.horaFin) {
+    return `No realizamos servicios el día ${fecha} entre las ${festivoDoc.horaInicio} y las ${festivoDoc.horaFin}${festivoDoc.descripcion ? ' (' + festivoDoc.descripcion + ')' : ''}. Consultas: 828 810 938.`;
+  }
+  return null;
+}
+
+if (!GOOGLE_CALENDAR_CREDENTIALS || !GOOGLE_CALENDAR_ID) {
+  console.warn('⚠️  AVISO: Google Calendar NO está configurado (falta GOOGLE_CALENDAR_CREDENTIALS o GOOGLE_CALENDAR_ID). Las reservas NO se agendarán en Calendar hasta que se configure.');
+}
 
 // =================== GOOGLE CALENDAR ===================
-// Crea el cliente de Calendar a partir de las credenciales de la cuenta de servicio.
 let calendarClient = null;
 function getCalendarClient() {
   if (calendarClient) return calendarClient;
   if (!GOOGLE_CALENDAR_CREDENTIALS || !GOOGLE_CALENDAR_ID) return null;
   try {
     let raw = GOOGLE_CALENDAR_CREDENTIALS.trim();
-    // Si las credenciales vienen en Base64 (recomendado, no se rompe al pegar en Railway),
-    // las descodificamos. Detectamos Base64 porque no empieza por "{".
-    if (!raw.startsWith('{')) {
-      try { raw = Buffer.from(raw, 'base64').toString('utf-8'); } catch (e) {}
-    }
+    if (!raw.startsWith('{')) raw = Buffer.from(raw, 'base64').toString('utf-8');
     const credentials = JSON.parse(raw);
-    // Arreglar la clave privada por si los saltos de línea quedaron como texto "\n".
-    if (credentials.private_key && credentials.private_key.includes('\\n')) {
+    if (credentials.private_key?.includes('\\n'))
       credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
-    }
-    const auth = new google.auth.GoogleAuth({
-      credentials,
-      scopes: ['https://www.googleapis.com/auth/calendar']
-    });
+    const auth = new google.auth.GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/calendar'] });
     calendarClient = google.calendar({ version: 'v3', auth });
     return calendarClient;
-  } catch (e) {
-    console.error('Error al crear cliente de Calendar:', e.message);
-    return null;
-  }
+  } catch(e) { console.error('Error Calendar client:', e.message); return null; }
 }
 
-// Crea un evento en el calendario para una reserva aceptada.
-// Devuelve el ID del evento creado, o null si no se pudo.
 async function crearEventoCalendario(reserva, nombreConductor) {
   const calendar = getCalendarClient();
-  if (!calendar) {
-    console.log('Google Calendar no configurado (faltan credenciales o ID). Se omite.');
-    return null;
-  }
+  if (!calendar) return null;
   try {
     const d = reserva.datos;
-    // Construir inicio y fin en horario de Canarias (Atlantic/Canary)
     const inicio = new Date(`${d.fecha}T${d.hora}:00`);
-    if (isNaN(inicio)) { console.error('Fecha de reserva inválida para el calendario'); return null; }
-    const fin = new Date(inicio.getTime() + 60 * 60 * 1000); // duración 1 hora
-    const toISO = (fecha) => {
-      // Formato YYYY-MM-DDTHH:MM:SS (sin Z), con timeZone aparte
-      const p = (n) => String(n).padStart(2, '0');
-      return `${fecha.getFullYear()}-${p(fecha.getMonth()+1)}-${p(fecha.getDate())}T${p(fecha.getHours())}:${p(fecha.getMinutes())}:00`;
-    };
-
-    // Color: naranja (6) si va HACIA el aeropuerto, azul (7) si viene DESDE el aeropuerto
-    const destinoEsAeropuerto = /aeropuerto|airport|lpa/i.test(d.destino || '');
-    const origenEsAeropuerto = /aeropuerto|airport|lpa/i.test(d.origen || '');
-    let colorId = '8'; // gris por defecto
-    if (destinoEsAeropuerto) colorId = '6';      // ciudad → aeropuerto = naranja
-    else if (origenEsAeropuerto) colorId = '7';  // aeropuerto → ciudad = azul
-
-    const precio = d.precioEstimado ? `\nPrecio estimado: ${d.precioEstimado} €` : '';
-    const vuelo = d.vuelo ? `\nVuelo: ${d.vuelo}` : '';
-    const pax = d.pasajeros ? `\nPasajeros: ${d.pasajeros}` : '';
-    const obs = d.observaciones ? `\nObservaciones: ${d.observaciones}` : '';
-    const tel = d.telefono ? `\nTeléfono cliente: ${d.telefono}` : '';
-
-    const evento = {
-      summary: `🚖 ${numReserva(reserva.numero)} — ${d.origen} → ${d.destino}`,
-      description: `Cliente: ${d.nombre || '-'}${tel}\nConductor: ${nombreConductor || '-'}${precio}${vuelo}${pax}${obs}`,
-      start: { dateTime: toISO(inicio), timeZone: 'Atlantic/Canary' },
-      end: { dateTime: toISO(fin), timeZone: 'Atlantic/Canary' },
-      colorId,
-      reminders: {
-        useDefault: false,
-        overrides: [
-          { method: 'popup', minutes: 60 },
-          { method: 'popup', minutes: 15 }
-        ]
-      }
-    };
-
+    if (isNaN(inicio)) return null;
+    const fin = new Date(inicio.getTime() + 60 * 60 * 1000);
+    const pad = (n) => String(n).padStart(2, '0');
+    const toISO = (f) => `${f.getFullYear()}-${pad(f.getMonth()+1)}-${pad(f.getDate())}T${pad(f.getHours())}:${pad(f.getMinutes())}:00`;
+    const destAero = /aeropuerto|airport|lpa/i.test(d.destino || '');
+    const origAero = /aeropuerto|airport|lpa/i.test(d.origen || '');
+    const colorId = destAero ? '6' : origAero ? '7' : '8';
+    const sillasTexto = Array.isArray(d.sillas) && d.sillas.length ? d.sillas.join(', ') : (d.sillas || '');
+    const lineas = [
+      `👤 Cliente: ${d.nombre || '—'}`,
+      `📞 Teléfono: ${d.telefono || '—'}`,
+      d.correo ? `✉️ Correo: ${d.correo}` : '',
+      `📍 Origen: ${d.origen || '—'}`,
+      `🏁 Destino: ${d.destino || '—'}`,
+      `🕐 Hora: ${d.hora || '—'}`,
+      `👥 Pasajeros: ${d.pasajeros || '—'}`,
+      d.vehiculoNombre ? `🚖 Vehículo: ${d.vehiculoNombre}` : '',
+      sillasTexto ? `🧒 Sillas: ${sillasTexto}` : '',
+      d.vuelo ? `✈️ Nº de vuelo: ${d.vuelo}` : '',
+      d.pasaporte ? `🛂 Pasaporte/doc.: ${d.pasaporte}` : '',
+      `🚕 Conductor: ${nombreConductor || 'Sin asignar'}`,
+      d.precioEstimado ? `💰 Precio estimado: ${d.precioEstimado}€` : '',
+      d.observaciones ? `💬 Observaciones: ${d.observaciones}` : ''
+    ].filter(Boolean);
     const res = await calendar.events.insert({
       calendarId: GOOGLE_CALENDAR_ID,
-      requestBody: evento
+      requestBody: {
+        summary: `🚖 ${numReserva(reserva.numero)} — ${d.nombre || 'Cliente'} · ${d.origen} → ${d.destino}`,
+        description: lineas.join('\n'),
+        location: d.origen || '',
+        start: { dateTime: toISO(inicio), timeZone: 'Atlantic/Canary' },
+        end: { dateTime: toISO(fin), timeZone: 'Atlantic/Canary' },
+        colorId,
+        reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 60 }, { method: 'popup', minutes: 15 }] }
+      }
     });
-    console.log('Evento de calendario creado:', res.data.id);
     return res.data.id;
-  } catch (e) {
-    console.error('Error creando evento en Calendar:', e.message);
-    try { bot.sendMessage(OWNER_CHAT_ID, `⚠️ No se pudo crear el evento en Google Calendar: ${e.message}`); } catch (err) {}
-    return null;
-  }
+  } catch(e) { console.error('Error crear evento Calendar:', e.message); return null; }
 }
 
-// Borra un evento del calendario (al cancelar una reserva).
 async function borrarEventoCalendario(eventoId) {
   if (!eventoId) return;
   const calendar = getCalendarClient();
   if (!calendar) return;
-  try {
-    await calendar.events.delete({ calendarId: GOOGLE_CALENDAR_ID, eventId: eventoId });
-    console.log('Evento de calendario borrado:', eventoId);
-  } catch (e) {
-    console.error('Error borrando evento de Calendar:', e.message);
-  }
+  try { await calendar.events.delete({ calendarId: GOOGLE_CALENDAR_ID, eventId: eventoId }); } catch(e) {}
 }
 
-function cumpleAntelacion(fecha, hora) {
-  try {
-    const fechaReserva = new Date(`${fecha}T${hora}:00`);
-    if (isNaN(fechaReserva)) return false;
-    const minutos = (fechaReserva - ahoraCanarias()) / 60000;
-    return minutos >= cacheConfig.antelacion * 60;
-  } catch (e) {
-    return false;
-  }
+// (Eliminada calcularDistanciaKm: usaba Directions API y no se utilizaba en ningún endpoint.
+// El cálculo real de distancia se hace en /calcular-tarifa con Distance Matrix API.)
+
+async function determinarTarifa(fecha, hora) {
+  const horaNum = parseInt(hora.replace(':', ''));
+  const diaSemana = new Date(fecha + 'T12:00:00').getDay();
+  const festivo = await Festivo.findOne({ fecha });
+  if (diaSemana === 0 || festivo) return 'festiva';
+  if (horaNum >= 600 && horaNum <= 2159) return 'diurna';
+  return 'nocturna';
 }
 
-// =================== EMAIL (API de Brevo — Railway bloquea SMTP) ===================
+function calcularPrecio(distanciaKm, tipo, esAeropuerto) {
+  const base = tipo === 'diurna' ? 3.85 : 4.25;
+  const km = tipo === 'diurna' ? 1.35 : 1.55;
+  let precio = base + (distanciaKm * km);
+  if (esAeropuerto) precio += 2.10;
+  return Math.round(precio / 0.05) * 0.05;
+}
 
-const BREVO_API_KEY = process.env.BREVO_API_KEY;
+async function detectarMunicipio(origen, coords) {
+  const t = (origen || '').toLowerCase();
+  if (t.includes('aeropuerto') || t.includes('airport') || t.includes('lpa') || t.includes('gando')) return 'AEROPUERTO';
+  const ZONAS = { 'maspalomas': 'San Bartolomé de Tirajana', 'playa del ingles': 'San Bartolomé de Tirajana', 'playa del inglés': 'San Bartolomé de Tirajana', 'meloneras': 'San Bartolomé de Tirajana', 'puerto rico': 'Mogán', 'arguineguin': 'Mogán', 'vecindario': 'Santa Lucía de Tirajana' };
+  for (const z in ZONAS) if (t.includes(z)) return ZONAS[z];
+  const MUNICIPIOS = ['Las Palmas de Gran Canaria', 'Telde', 'Santa Lucía de Tirajana', 'San Bartolomé de Tirajana', 'Mogán', 'Arucas', 'Gáldar', 'Agüimes', 'Ingenio'];
+  for (const m of MUNICIPIOS) if (t.includes(m.toLowerCase())) return m;
+  return null;
+}
 
+// =================== EMAIL BREVO ===================
 function enviarEmailBrevo(payload) {
   return new Promise((resolve, reject) => {
+    if (!BREVO_API_KEY) return reject(new Error('Falta BREVO_API_KEY'));
     const body = JSON.stringify(payload);
     const req = https.request({
-      hostname: 'api.brevo.com',
-      path: '/v3/smtp/email',
-      method: 'POST',
-      headers: {
-        'api-key': BREVO_API_KEY,
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body)
-      }
+      hostname: 'api.brevo.com', path: '/v3/smtp/email', method: 'POST',
+      headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
     }, (res) => {
       let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);
-        else reject(new Error(`Brevo ${res.statusCode}: ${data}`));
-      });
+      res.on('data', c => data += c);
+      res.on('end', () => res.statusCode >= 200 && res.statusCode < 300 ? resolve(data) : reject(new Error(`Brevo ${res.statusCode}: ${data}`)));
     });
     req.on('error', reject);
-    req.write(body);
-    req.end();
+    req.write(body); req.end();
   });
 }
 
 async function enviarEmailConfirmacion(datos, reservaId, nombreConductor, numero) {
-  if (!datos.correo) {
-    console.log('Reserva sin correo, no se envía email:', datos.nombre);
-    try { bot.sendMessage(OWNER_CHAT_ID, `⚠️ La reserva de *${datos.nombre}* no tiene correo, no se envió email de confirmación.`, { parse_mode: 'Markdown' }); } catch (e) {}
-    return;
-  }
-  if (!BREVO_API_KEY) {
-    console.error('Falta la variable BREVO_API_KEY');
-    try { bot.sendMessage(OWNER_CHAT_ID, `❌ No se pudo enviar el email: falta la variable BREVO_API_KEY en Railway.`); } catch (e) {}
-    return;
-  }
+  if (!datos.correo || !BREVO_API_KEY) return;
   try {
-    // Idioma del cliente (es / en / de). Por defecto español.
-    const idioma = ['es', 'en', 'de'].includes(datos.idioma) ? datos.idioma : 'es';
+    const idioma = ['es','en','de','fr','it','pt'].includes(datos.idioma) ? datos.idioma : 'es';
     const T = {
-      es: {
-        subject: 'Tu reserva de taxi ha sido confirmada',
-        confirmada: '✅ Tu reserva ha sido confirmada',
-        hola: (n) => `Hola <strong>${n}</strong>, un conductor ha aceptado tu servicio.`,
-        nReserva: 'Nº de reserva:', conductor: 'Tu conductor:',
-        fecha: 'Fecha:', alas: 'a las', origen: 'Origen:', destino: 'Destino:',
-        pasajeros: 'Pasajeros:', precio: 'Precio estimado:',
-        necesitasCancelar: '¿Necesitas cancelar tu reserva?', cancelarBtn: 'Cancelar mi reserva',
-        cancelarNota: 'Solo se puede cancelar online hasta 2 horas antes del servicio.',
-        conductorPunto: '🚖 Un conductor estará en el punto de recogida a la hora indicada.',
-        cancelarConsultas: '📞 Para cancelar o consultas:'
-      },
-      en: {
-        subject: 'Your taxi booking has been confirmed',
-        confirmada: '✅ Your booking has been confirmed',
-        hola: (n) => `Hello <strong>${n}</strong>, a driver has accepted your service.`,
-        nReserva: 'Booking no.:', conductor: 'Your driver:',
-        fecha: 'Date:', alas: 'at', origen: 'Pickup:', destino: 'Destination:',
-        pasajeros: 'Passengers:', precio: 'Estimated price:',
-        necesitasCancelar: 'Need to cancel your booking?', cancelarBtn: 'Cancel my booking',
-        cancelarNota: 'Online cancellation is only possible up to 2 hours before the service.',
-        conductorPunto: '🚖 A driver will be at the pickup point at the scheduled time.',
-        cancelarConsultas: '📞 To cancel or for any questions:'
-      },
-      de: {
-        subject: 'Ihre Taxibuchung wurde bestätigt',
-        confirmada: '✅ Ihre Buchung wurde bestätigt',
-        hola: (n) => `Hallo <strong>${n}</strong>, ein Fahrer hat Ihren Service angenommen.`,
-        nReserva: 'Buchungsnr.:', conductor: 'Ihr Fahrer:',
-        fecha: 'Datum:', alas: 'um', origen: 'Abholort:', destino: 'Zielort:',
-        pasajeros: 'Passagiere:', precio: 'Geschätzter Preis:',
-        necesitasCancelar: 'Müssen Sie Ihre Buchung stornieren?', cancelarBtn: 'Meine Buchung stornieren',
-        cancelarNota: 'Eine Online-Stornierung ist nur bis 2 Stunden vor dem Service möglich.',
-        conductorPunto: '🚖 Ein Fahrer wird zur angegebenen Zeit am Abholort sein.',
-        cancelarConsultas: '📞 Zum Stornieren oder bei Fragen:'
-      }
+      es: { subject: 'Tu reserva de taxi ha sido confirmada', titulo: '✅ Tu reserva ha sido confirmada', hola: (n) => `Hola <strong>${n}</strong>, un conductor ha aceptado tu servicio.`, nRes: 'Nº de reserva:', cond: 'Tu conductor:', fecha: 'Fecha:', alas: 'a las', ori: 'Origen:', des: 'Destino:', pax: 'Pasajeros:' },
+      en: { subject: 'Your taxi booking has been confirmed', titulo: '✅ Your booking has been confirmed', hola: (n) => `Hello <strong>${n}</strong>, a driver has accepted your service.`, nRes: 'Booking no.:', cond: 'Your driver:', fecha: 'Date:', alas: 'at', ori: 'Pickup:', des: 'Destination:', pax: 'Passengers:' },
+      de: { subject: 'Ihre Taxibuchung wurde bestätigt', titulo: '✅ Ihre Buchung wurde bestätigt', hola: (n) => `Hallo <strong>${n}</strong>, ein Fahrer hat Ihren Service angenommen.`, nRes: 'Buchungsnr.:', cond: 'Ihr Fahrer:', fecha: 'Datum:', alas: 'um', ori: 'Abholort:', des: 'Zielort:', pax: 'Passagiere:' },
+      fr: { subject: 'Votre réservation de taxi a été confirmée', titulo: '✅ Votre réservation a été confirmée', hola: (n) => `Bonjour <strong>${n}</strong>, un chauffeur a accepté votre course.`, nRes: 'N° de réservation:', cond: 'Votre chauffeur:', fecha: 'Date:', alas: 'à', ori: 'Départ:', des: 'Destination:', pax: 'Passagers:' },
+      it: { subject: 'La tua prenotazione taxi è stata confermata', titulo: '✅ La tua prenotazione è confermata', hola: (n) => `Ciao <strong>${n}</strong>, un autista ha accettato il tuo servizio.`, nRes: 'N° prenotazione:', cond: 'Il tuo autista:', fecha: 'Data:', alas: 'alle', ori: 'Partenza:', des: 'Destinazione:', pax: 'Passeggeri:' },
+      pt: { subject: 'A sua reserva de táxi foi confirmada', titulo: '✅ A sua reserva foi confirmada', hola: (n) => `Olá <strong>${n}</strong>, um motorista aceitou o seu serviço.`, nRes: 'Nº de reserva:', cond: 'O seu motorista:', fecha: 'Data:', alas: 'às', ori: 'Partida:', des: 'Destino:', pax: 'Passageiros:' }
     }[idioma];
-
-    const precioHtml = datos.precioEstimado ? `<p><strong>${T.precio}</strong> ${datos.precioEstimado} €</p>` : '';
-    const numeroHtml = numero ? `<p>🎫 <strong>${T.nReserva}</strong> RT-${String(numero).padStart(4, '0')}</p>` : '';
-    // Solo el NOMBRE del conductor, nunca su teléfono.
-    const conductorHtml = nombreConductor ? `<p>🚖 <strong>${T.conductor}</strong> ${nombreConductor}</p>` : '';
     const base = process.env.BASE_URL || '';
-    const cancelarHtml = (reservaId && base) ? `
-        <div style="background:#fff;border:1px solid #f0d0d0;border-radius:8px;padding:16px;margin:16px 0;text-align:center;">
-          <p style="margin:0 0 12px;color:#666;font-size:14px;">${T.necesitasCancelar}</p>
-          <a href="${base}/cancelar?id=${reservaId}" style="display:inline-block;padding:12px 24px;background:#e05050;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">${T.cancelarBtn}</a>
-          <p style="margin:12px 0 0;color:#999;font-size:12px;">${T.cancelarNota}</p>
-        </div>` : '';
+    const cancelarHtml = (reservaId && base) ? `<div style="text-align:center;margin:16px 0;"><a href="${base}/cancelar?id=${reservaId}" style="display:inline-block;padding:12px 24px;background:#e05050;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">Cancelar mi reserva</a></div>` : '';
+
+    // Bloque especial si el origen es el aeropuerto
+    const esOrigenAeropuerto = /aeropuerto|airport|lpa|gando/i.test(datos.origen || '');
+    const aeropuertoInfo = {
+      es: `<div style="background:#fff8e1;border:2px solid #f5c400;border-radius:10px;padding:18px;margin:16px 0;"><h3 style="color:#b8860b;margin:0 0 12px;font-size:16px;">📍 ¿Dónde encontrar a tu conductor?</h3><p style="margin:6px 0;font-size:14px;">🪧 <strong>Señal:</strong> Tu conductor llevará un cartel con tu nombre: <strong>${datos.nombre}</strong></p><div style="background:#fffde7;border-radius:8px;padding:12px;margin:10px 0;"><p style="margin:4px 0;font-size:14px;font-weight:bold;color:#7a6000;">✈️ Vuelo nacional</p><p style="margin:4px 0;font-size:13px;color:#7a6000;">Planta 0 — junto a la puerta de salida de la cinta de equipajes, frente al Café Pans</p></div><div style="background:#fffde7;border-radius:8px;padding:12px;margin:10px 0;"><p style="margin:4px 0;font-size:14px;font-weight:bold;color:#7a6000;">🌍 Vuelo internacional</p><p style="margin:4px 0;font-size:13px;color:#7a6000;">Planta 0 — junto al cajero ATM, a la salida de aduana</p></div><p style="margin:6px 0;font-size:14px;">⏱️ <strong>El conductor esperará</strong> hasta 60 minutos tras el aterrizaje</p><p style="margin:6px 0;font-size:14px;">📞 <strong>Si no lo encuentras:</strong> Llama al <strong>828 810 938</strong></p></div>`,
+      en: `<div style="background:#fff8e1;border:2px solid #f5c400;border-radius:10px;padding:18px;margin:16px 0;"><h3 style="color:#b8860b;margin:0 0 12px;font-size:16px;">📍 Where to meet your driver?</h3><p style="margin:6px 0;font-size:14px;">🪧 <strong>Sign:</strong> Your driver will hold a sign with your name: <strong>${datos.nombre}</strong></p><div style="background:#fffde7;border-radius:8px;padding:12px;margin:10px 0;"><p style="margin:4px 0;font-size:14px;font-weight:bold;color:#7a6000;">✈️ Domestic flight</p><p style="margin:4px 0;font-size:13px;color:#7a6000;">Ground floor — next to the baggage claim exit door, in front of Café Pans</p></div><div style="background:#fffde7;border-radius:8px;padding:12px;margin:10px 0;"><p style="margin:4px 0;font-size:14px;font-weight:bold;color:#7a6000;">🌍 International flight</p><p style="margin:4px 0;font-size:13px;color:#7a6000;">Ground floor — next to the ATM, at the customs exit</p></div><p style="margin:6px 0;font-size:14px;">⏱️ <strong>Your driver will wait</strong> up to 60 minutes after landing</p><p style="margin:6px 0;font-size:14px;">📞 <strong>Can't find them?</strong> Call <strong>828 810 938</strong></p></div>`,
+      de: `<div style="background:#fff8e1;border:2px solid #f5c400;border-radius:10px;padding:18px;margin:16px 0;"><h3 style="color:#b8860b;margin:0 0 12px;font-size:16px;">📍 Wo finden Sie Ihren Fahrer?</h3><p style="margin:6px 0;font-size:14px;">🪧 <strong>Schild:</strong> Ihr Fahrer hält ein Schild mit Ihrem Namen: <strong>${datos.nombre}</strong></p><div style="background:#fffde7;border-radius:8px;padding:12px;margin:10px 0;"><p style="margin:4px 0;font-size:14px;font-weight:bold;color:#7a6000;">✈️ Inlandsflug</p><p style="margin:4px 0;font-size:13px;color:#7a6000;">Erdgeschoss — neben dem Ausgang des Gepäckbandes, gegenüber dem Café Pans</p></div><div style="background:#fffde7;border-radius:8px;padding:12px;margin:10px 0;"><p style="margin:4px 0;font-size:14px;font-weight:bold;color:#7a6000;">🌍 Internationaler Flug</p><p style="margin:4px 0;font-size:13px;color:#7a6000;">Erdgeschoss — neben dem Geldautomaten, am Zollausgang</p></div><p style="margin:6px 0;font-size:14px;">⏱️ <strong>Ihr Fahrer wartet</strong> bis zu 60 Minuten nach der Landung</p><p style="margin:6px 0;font-size:14px;">📞 <strong>Nicht gefunden?</strong> Rufen Sie an: <strong>828 810 938</strong></p></div>`,
+      fr: `<div style="background:#fff8e1;border:2px solid #f5c400;border-radius:10px;padding:18px;margin:16px 0;"><h3 style="color:#b8860b;margin:0 0 12px;font-size:16px;">📍 Où trouver votre chauffeur ?</h3><p style="margin:6px 0;font-size:14px;">🪧 <strong>Panneau :</strong> Votre chauffeur tiendra un panneau avec votre nom : <strong>${datos.nombre}</strong></p><div style="background:#fffde7;border-radius:8px;padding:12px;margin:10px 0;"><p style="margin:4px 0;font-size:14px;font-weight:bold;color:#7a6000;">✈️ Vol intérieur</p><p style="margin:4px 0;font-size:13px;color:#7a6000;">Rez-de-chaussée — à côté de la sortie du tapis de bagages, en face du Café Pans</p></div><div style="background:#fffde7;border-radius:8px;padding:12px;margin:10px 0;"><p style="margin:4px 0;font-size:14px;font-weight:bold;color:#7a6000;">🌍 Vol international</p><p style="margin:4px 0;font-size:13px;color:#7a6000;">Rez-de-chaussée — à côté du distributeur ATM, à la sortie de la douane</p></div><p style="margin:6px 0;font-size:14px;">⏱️ <strong>Votre chauffeur attendra</strong> jusqu'à 60 minutes après l'atterrissage</p><p style="margin:6px 0;font-size:14px;">📞 <strong>Introuvable ?</strong> Appelez le <strong>828 810 938</strong></p></div>`,
+      it: `<div style="background:#fff8e1;border:2px solid #f5c400;border-radius:10px;padding:18px;margin:16px 0;"><h3 style="color:#b8860b;margin:0 0 12px;font-size:16px;">📍 Dove trovare il tuo autista?</h3><p style="margin:6px 0;font-size:14px;">🪧 <strong>Cartello:</strong> Il tuo autista terrà un cartello con il tuo nome: <strong>${datos.nombre}</strong></p><div style="background:#fffde7;border-radius:8px;padding:12px;margin:10px 0;"><p style="margin:4px 0;font-size:14px;font-weight:bold;color:#7a6000;">✈️ Volo nazionale</p><p style="margin:4px 0;font-size:13px;color:#7a6000;">Piano terra — vicino all'uscita del nastro bagagli, di fronte al Café Pans</p></div><div style="background:#fffde7;border-radius:8px;padding:12px;margin:10px 0;"><p style="margin:4px 0;font-size:14px;font-weight:bold;color:#7a6000;">🌍 Volo internazionale</p><p style="margin:4px 0;font-size:13px;color:#7a6000;">Piano terra — vicino al bancomat ATM, all'uscita della dogana</p></div><p style="margin:6px 0;font-size:14px;">⏱️ <strong>Il tuo autista aspetterà</strong> fino a 60 minuti dopo l'atterraggio</p><p style="margin:6px 0;font-size:14px;">📞 <strong>Non lo trovi?</strong> Chiama il <strong>828 810 938</strong></p></div>`,
+      pt: `<div style="background:#fff8e1;border:2px solid #f5c400;border-radius:10px;padding:18px;margin:16px 0;"><h3 style="color:#b8860b;margin:0 0 12px;font-size:16px;">📍 Onde encontrar o seu motorista?</h3><p style="margin:6px 0;font-size:14px;">🪧 <strong>Placa:</strong> O seu motorista terá uma placa com o seu nome: <strong>${datos.nombre}</strong></p><div style="background:#fffde7;border-radius:8px;padding:12px;margin:10px 0;"><p style="margin:4px 0;font-size:14px;font-weight:bold;color:#7a6000;">✈️ Voo doméstico</p><p style="margin:4px 0;font-size:13px;color:#7a6000;">Rés do chão — junto à saída da cinta de bagagens, em frente ao Café Pans</p></div><div style="background:#fffde7;border-radius:8px;padding:12px;margin:10px 0;"><p style="margin:4px 0;font-size:14px;font-weight:bold;color:#7a6000;">🌍 Voo internacional</p><p style="margin:4px 0;font-size:13px;color:#7a6000;">Rés do chão — junto ao multibanco ATM, à saída da alfândega</p></div><p style="margin:6px 0;font-size:14px;">⏱️ <strong>O seu motorista aguardará</strong> até 60 minutos após a aterragem</p><p style="margin:6px 0;font-size:14px;">📞 <strong>Não o encontra?</strong> Ligue para <strong>828 810 938</strong></p></div>`
+    };
+    const bloqueAeropuerto = esOrigenAeropuerto ? (aeropuertoInfo[idioma] || aeropuertoInfo.es) : '';
+
     await enviarEmailBrevo({
       sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
       to: [{ email: datos.correo, name: datos.nombre }],
       subject: T.subject,
-      htmlContent: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f9f9f9;max-width:600px;margin:0 auto;">
-        <h2 style="color:#f5c400;background:#1a1a1a;padding:16px;border-radius:8px;">🚖 Reserva Taxi Las Palmas</h2>
-        <h3 style="color:#2d8a2d;">${T.confirmada}</h3>
-        <p>${T.hola(datos.nombre)}</p>
-        <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:16px;margin:16px 0;">
-          ${numeroHtml}
-          ${conductorHtml}
-          <p>📅 <strong>${T.fecha}</strong> ${datos.fecha} ${T.alas} ${datos.hora}</p>
-          <p>📍 <strong>${T.origen}</strong> ${datos.origen}</p>
-          <p>🏁 <strong>${T.destino}</strong> ${datos.destino}</p>
-          <p>👥 <strong>${T.pasajeros}</strong> ${datos.pasajeros}</p>
-          ${precioHtml}
-        </div>
-        ${cancelarHtml}
-        <p>${T.conductorPunto}</p>
-        <p>${T.cancelarConsultas} <strong>828 810 938</strong></p>
-        <p>✉️ reservas@taxilaspalmasdegrancanaria.com</p>
-      </div>`
+      htmlContent: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f9f9f9;max-width:600px;margin:0 auto;"><h2 style="color:#f5c400;background:#1a1a1a;padding:16px;border-radius:8px;">🚖 Reserva Taxi Las Palmas</h2><h3 style="color:#2d8a2d;">${T.titulo}</h3><p>${T.hola(datos.nombre)}</p><div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:16px;margin:16px 0;"><p>🎫 <strong>${T.nRes}</strong> ${numReserva(numero)}</p>${nombreConductor ? `<p>🚖 <strong>${T.cond}</strong> ${nombreConductor}</p>` : ''}<p>📅 <strong>${T.fecha}</strong> ${datos.fecha} ${T.alas} ${datos.hora}</p><p>📍 <strong>${T.ori}</strong> ${datos.origen}</p><p>🏁 <strong>${T.des}</strong> ${datos.destino}</p><p>👥 <strong>${T.pax}</strong> ${datos.pasajeros}</p>${datos.precioEstimado ? `<p>💰 <strong>Precio estimado:</strong> ${datos.precioEstimado}€</p>` : ''}</div>${bloqueAeropuerto}${cancelarHtml}<p>📞 Consultas: <strong>828 810 938</strong></p><p>✉️ reservas@taxilaspalmasdegrancanaria.com</p></div>`
     });
-    console.log('Email Brevo enviado a:', datos.correo);
-    try { bot.sendMessage(OWNER_CHAT_ID, `📧 Email de confirmación enviado a ${datos.correo}`); } catch (e) {}
-  } catch (err) {
-    console.error('Error email Brevo:', err.message);
-    try { bot.sendMessage(OWNER_CHAT_ID, `❌ Error al enviar email a ${datos.correo}: ${err.message}`); } catch (e) {}
-  }
+    console.log('Email confirmacion enviado a:', datos.correo);
+  } catch(e) { console.error('Error email confirmacion:', e.message); }
 }
 
-// =================== SCHEMAS ===================
+async function enviarEmailCancelacion(datos, numero, motivo) {
+  if (!datos.correo || !BREVO_API_KEY) return;
+  try {
+    const idioma = ['es','en','de','fr','it','pt'].includes(datos.idioma) ? datos.idioma : 'es';
+    const T = {
+      es: { subject: 'Tu reserva de taxi ha sido cancelada', titulo: '❌ Reserva cancelada', hola: (n) => `Hola <strong>${n}</strong>, tu reserva ha sido cancelada.`, nRes: 'Nº reserva:', fecha: 'Fecha:', alas: 'a las', ori: 'Origen:', des: 'Destino:', motLbl: 'Motivo:' },
+      en: { subject: 'Your taxi booking has been cancelled', titulo: '❌ Booking cancelled', hola: (n) => `Hello <strong>${n}</strong>, your booking has been cancelled.`, nRes: 'Booking no.:', fecha: 'Date:', alas: 'at', ori: 'Pickup:', des: 'Destination:', motLbl: 'Reason:' },
+      de: { subject: 'Ihre Taxibuchung wurde storniert', titulo: '❌ Buchung storniert', hola: (n) => `Hallo <strong>${n}</strong>, Ihre Buchung wurde storniert.`, nRes: 'Buchungsnr.:', fecha: 'Datum:', alas: 'um', ori: 'Abholort:', des: 'Zielort:', motLbl: 'Grund:' },
+      fr: { subject: 'Votre réservation de taxi a été annulée', titulo: '❌ Réservation annulée', hola: (n) => `Bonjour <strong>${n}</strong>, votre réservation a été annulée.`, nRes: 'N° réservation:', fecha: 'Date:', alas: 'à', ori: 'Départ:', des: 'Destination:', motLbl: 'Motif:' },
+      it: { subject: 'La tua prenotazione taxi è stata annullata', titulo: '❌ Prenotazione annullata', hola: (n) => `Ciao <strong>${n}</strong>, la tua prenotazione è stata annullata.`, nRes: 'N° prenotazione:', fecha: 'Data:', alas: 'alle', ori: 'Partenza:', des: 'Destinazione:', motLbl: 'Motivo:' },
+      pt: { subject: 'A sua reserva de táxi foi cancelada', titulo: '❌ Reserva cancelada', hola: (n) => `Olá <strong>${n}</strong>, a sua reserva foi cancelada.`, nRes: 'Nº reserva:', fecha: 'Data:', alas: 'às', ori: 'Partida:', des: 'Destino:', motLbl: 'Motivo:' }
+    }[idioma];
+    await enviarEmailBrevo({
+      sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
+      to: [{ email: datos.correo, name: datos.nombre }],
+      subject: T.subject,
+      htmlContent: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f9f9f9;max-width:600px;margin:0 auto;"><h2 style="color:#f5c400;background:#1a1a1a;padding:16px;border-radius:8px;">🚖 Reserva Taxi Las Palmas</h2><h3 style="color:#e23b3b;">${T.titulo}</h3><p>${T.hola(datos.nombre)}</p><div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:16px;margin:16px 0;">${numero ? `<p><strong>${T.nRes}</strong> ${numReserva(numero)}</p>` : ''}<p><strong>${T.fecha}</strong> ${datos.fecha} ${T.alas} ${datos.hora}</p><p><strong>${T.ori}</strong> ${datos.origen}</p><p><strong>${T.des}</strong> ${datos.destino}</p>${motivo ? `<p><strong>${T.motLbl}</strong> ${motivo}</p>` : ''}</div><p>📞 <strong>828 810 938</strong></p><p>✉️ reservas@taxilaspalmasdegrancanaria.com</p></div>`
+    });
+    console.log('Email cancelacion enviado a:', datos.correo);
+  } catch(e) { console.error('Error email cancelacion:', e.message); }
+}
 
+async function enviarEmailRecordatorio(reserva) {
+  if (!reserva.datos?.correo || !BREVO_API_KEY) return;
+  try {
+    await enviarEmailBrevo({
+      sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
+      to: [{ email: reserva.datos.correo, name: reserva.datos.nombre }],
+      subject: 'Recordatorio: tu taxi llega en 1 hora',
+      htmlContent: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f9f9f9;max-width:600px;margin:0 auto;"><h2 style="color:#f5c400;background:#1a1a1a;padding:16px;border-radius:8px;">🚖 Reserva Taxi Las Palmas</h2><h3 style="color:#2d8a2d;">⏰ Tu taxi llega en 1 hora</h3><p>Hola <strong>${reserva.datos.nombre}</strong>, te recordamos tu recogida:</p><div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:16px;margin:16px 0;"><p>🎫 <strong>Nº reserva:</strong> ${numReserva(reserva.numero)}</p>${reserva.conductorNombre ? `<p>🚖 <strong>Tu conductor:</strong> ${reserva.conductorNombre}</p>` : ''}<p>📅 <strong>Fecha:</strong> ${reserva.datos.fecha} a las ${reserva.datos.hora}</p><p>📍 <strong>Origen:</strong> ${reserva.datos.origen}</p><p>🏁 <strong>Destino:</strong> ${reserva.datos.destino}</p></div><p>📞 <strong>828 810 938</strong></p></div>`
+    });
+  } catch(e) { console.error('Error email recordatorio:', e.message); }
+}
+
+async function enviarCodigoVerificacion(email, nombre, codigo) {
+  if (!BREVO_API_KEY) return;
+  try {
+    await enviarEmailBrevo({
+      sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
+      to: [{ email, name: nombre }],
+      subject: 'Código de verificación — App Conductores',
+      htmlContent: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px"><h2 style="color:#f5c400;margin:0 0 16px">🚖 Reserva Taxi Las Palmas</h2><p>Hola <strong>${nombre}</strong>, tu código de verificación es:</p><div style="font-size:42px;font-weight:bold;color:#f5c400;text-align:center;letter-spacing:12px;margin:24px 0">${codigo}</div><p style="color:#aaa;font-size:13px">Este código expira en 30 minutos.</p></div>`
+    });
+  } catch(e) { console.error('Error email codigo:', e.message); }
+}
+
+async function enviarEmailCopiaNuevaReserva(datos, numero) {
+  if (!BREVO_API_KEY) return;
+  try {
+    await enviarEmailBrevo({
+      sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
+      to: [{ email: 'yeraygonzalezmiranda@gmail.com', name: 'Yeray' }],
+      subject: `🆕 Nueva reserva ${numReserva(numero)} — ${datos.fecha} ${datos.hora}`,
+      htmlContent: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f9f9f9;max-width:600px;margin:0 auto;"><h2 style="color:#f5c400;background:#1a1a1a;padding:16px;border-radius:8px;">🚖 Nueva reserva recibida</h2><div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:16px;margin:16px 0;"><p>🎫 <strong>Nº reserva:</strong> ${numReserva(numero)}</p><p>👤 <strong>Cliente:</strong> ${datos.nombre || '—'}</p><p>📞 <strong>Teléfono:</strong> ${datos.telefono || '—'}</p><p>✉️ <strong>Correo:</strong> ${datos.correo || '—'}</p><p>📅 <strong>Fecha:</strong> ${datos.fecha} a las ${datos.hora}</p><p>📍 <strong>Origen:</strong> ${datos.origen}</p><p>🏁 <strong>Destino:</strong> ${datos.destino}</p><p>👥 <strong>Pasajeros:</strong> ${datos.pasajeros}</p>${datos.vuelo ? `<p>✈️ <strong>Nº de vuelo:</strong> ${datos.vuelo}</p>` : ''}${datos.pasaporte ? `<p>🛂 <strong>Pasaporte/doc.:</strong> ${datos.pasaporte}</p>` : ''}${datos.precioEstimado ? `<p>💰 <strong>Precio estimado:</strong> ${datos.precioEstimado}€</p>` : ''}${datos.observaciones ? `<p>💬 <strong>Observaciones:</strong> ${datos.observaciones}</p>` : ''}</div></div>`
+    });
+    console.log(`✅ Email copia enviado para reserva ${numReserva(numero)}`);
+  } catch(e) { console.error('Error email copia nueva reserva:', e.message, e.stack ? e.stack.split('\n')[1] : ''); }
+}
+
+async function enviarEmailConductorServicioAsignado(conductor, reserva) {
+  if (!conductor.email || !BREVO_API_KEY) return;
+  try {
+    const d = reserva.datos;
+    const reservaId = reserva._id;
+    const base = process.env.APP_URL || 'https://reservataxilaspalmas.com';
+    const sillasTexto = Array.isArray(d.sillas) && d.sillas.length ? d.sillas.join(', ') : '';
+    await enviarEmailBrevo({
+      sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
+      to: [{ email: conductor.email, name: conductor.nombre }],
+      subject: `🚖 Servicio asignado ${numReserva(reserva.numero)} — ${d.fecha} ${d.hora}`,
+      htmlContent: `
+        <div style="font-family:Arial,sans-serif;padding:24px;background:#f9f9f9;max-width:600px;margin:0 auto;">
+          <h2 style="color:#f5c400;background:#1a1a1a;padding:16px;border-radius:8px;">🚖 Reserva Taxi Las Palmas</h2>
+          <h3 style="color:#1a1d29;">Hola <strong>${conductor.nombre}</strong>, tienes un servicio asignado.</h3>
+          <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:16px;margin:16px 0;">
+            <p>🎫 <strong>Nº reserva:</strong> ${numReserva(reserva.numero)}</p>
+            <p>👤 <strong>Cliente:</strong> ${d.nombre || '—'}</p>
+            <p>📅 <strong>Fecha:</strong> ${d.fecha} a las ${d.hora}</p>
+            <p>📍 <strong>Origen:</strong> ${d.origen}</p>
+            <p>🏁 <strong>Destino:</strong> ${d.destino}</p>
+            <p>👥 <strong>Pasajeros:</strong> ${d.pasajeros}</p>
+            ${d.vuelo ? `<p>✈️ <strong>Nº de vuelo:</strong> ${d.vuelo}</p>` : ''}
+            ${d.pasaporte ? `<p>🛂 <strong>Pasaporte/doc.:</strong> ${d.pasaporte}</p>` : ''}
+            ${sillasTexto ? `<p>🧒 <strong>Sillas infantiles:</strong> ${sillasTexto}</p>` : ''}
+            ${d.precioEstimado ? `<p>💰 <strong>Precio estimado:</strong> ${d.precioEstimado}€</p>` : ''}
+            ${d.observaciones ? `<p>💬 <strong>Observaciones:</strong> ${d.observaciones}</p>` : ''}
+          </div>
+          <div style="text-align:center;margin:20px 0;">
+            <a href="${base}/conductores.html" style="display:inline-block;padding:14px 28px;background:#f5b800;color:#1a1a1a;border-radius:10px;text-decoration:none;font-weight:bold;font-size:15px;margin-bottom:10px;">📱 Abrir app de conductor</a>
+          </div>
+          <p style="text-align:center;font-size:13px;color:#888;">Gestiona el servicio desde la app: voy en camino → cliente recogido → finalizar</p>
+          <p style="margin-top:16px;">📞 Consultas: <strong>828 810 938</strong></p>
+        </div>`
+    });
+    console.log(`✅ Email conductor enviado a ${conductor.email} para reserva ${numReserva(reserva.numero)}`);
+  } catch(e) { console.error('Error email conductor asignado:', e.message); }
+}
 const conductorSchema = new mongoose.Schema({
   chatId: { type: String, unique: true },
-  nombre: String,
-  licencia: String,
-  telefono: String,
-  email: String,
-  password: String,
-  plaza: String,
-  codigoVerificacion: String,
-  codigoExpira: Date,
+  nombre: String, licencia: String, telefono: String, email: String,
+  password: String, plaza: String, matricula: String, matriculaEU: String,
+  codigoVerificacion: String, codigoExpira: Date,
   aprobado: { type: Boolean, default: false },
   activo: { type: Boolean, default: true },
-  pushSubscription: String,
+  comisionPorcentaje: { type: Number, default: 10 },
+  penalizadoHasta: Date,
   fechaRegistro: { type: Date, default: Date.now }
 });
 
 const reservaSchema = new mongoose.Schema({
-  numero: Number,                                          // Número corto legible (RT-0042)
+  numero: Number,
   datos: Object,
-  clienteChatId: String,
-  estado: { type: String, default: 'pendiente' },          // pendiente / asignada / completada / cancelada
+  // estados: pendiente|asignada|en_camino|recogido|completada|cancelada
+  estado: { type: String, default: 'pendiente' },
   conductorAsignado: String,
-  conductorNombre: String,                                 // Nombre del taxista asignado
-  mensajesEnviados: [{ chatId: String, messageId: Number }],
-  recordatorioEnviado: { type: Boolean, default: false },  // Recordatorio al taxista (1h antes)
-  recordatorioClienteEnviado: { type: Boolean, default: false }, // Recordatorio al cliente (1h antes)
-  avisoSinAceptarEnviado: { type: Boolean, default: false },      // Aviso al admin si nadie acepta en 10 min
-  eventoCalendarioId: String,                              // ID del evento en Google Calendar (para poder borrarlo si se cancela)
+  conductorNombre: String,
+  eventoCalendarioId: String,
+  recordatorioEnviado: { type: Boolean, default: false },
+  recordatorioClienteEnviado: { type: Boolean, default: false },
+  avisoSinAceptarEnviado: { type: Boolean, default: false },
+  ubicacionLat: Number,
+  ubicacionLng: Number,
+  ultimaUbicacion: Date,
   fechaServicio: Date,
   fechaCreacion: { type: Date, default: Date.now }
 });
 
-// Contador para los números de reserva cortos
-const contadorSchema = new mongoose.Schema({
-  nombre: { type: String, unique: true },
-  valor: { type: Number, default: 0 }
+const contadorSchema = new mongoose.Schema({ nombre: { type: String, unique: true }, valor: { type: Number, default: 0 } });
+
+const festivoSchema = new mongoose.Schema({
+  fecha: { type: String, unique: true },
+  descripcion: String,
+  // tipo: 'festivo' | 'festivo_plus' | 'sin_servicio'
+  tipo: { type: String, default: 'festivo' },
+  suplementoPlus: { type: Number, default: 0 },
+  // Para tipo 'sin_servicio': si horaInicio/horaFin están vacíos, se bloquea el día completo (24h).
+  // Si tienen valor (formato "HH:MM"), solo se bloquea ese rango horario dentro del día.
+  horaInicio: { type: String, default: '' },
+  horaFin: { type: String, default: '' }
 });
+
+const tarifaSchema = new mongoose.Schema({
+  nombre: { type: String, unique: true },
+  valor: Number,
+  descripcion: String
+});
+
+const vehiculoSchema = new mongoose.Schema({
+  nombre: String,
+  descripcion: String,
+  plazas: { type: Number, default: 4 },
+  maletasGrandes: { type: Number, default: 2 },
+  maletasPequenas: { type: Number, default: 2 },
+  suplemento: { type: Number, default: 0 },
+  foto: { type: String, default: '' }, // base64 o URL
+  activo: { type: Boolean, default: true },
+  orden: { type: Number, default: 0 },
+  fechaCreacion: { type: Date, default: Date.now }
+});
+
+const comisionSchema = new mongoose.Schema({
+  conductorId: String, conductorNombre: String,
+  reservaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Reserva' },
+  precioCarrera: Number, comision: Number, mes: String,
+  pagada: { type: Boolean, default: false },
+  fechaCreacion: { type: Date, default: Date.now }
+});
+
+const configSchema = new mongoose.Schema({ nombre: { type: String, unique: true }, valor: Number });
+
+
+const Conductor = mongoose.model('Conductor', conductorSchema);
+
+const pushSubSchema = new mongoose.Schema({
+  // destinatario: 'admin' o el _id del conductor (string)
+  destinatario: { type: String, required: true },
+  endpoint: { type: String, required: true, unique: true },
+  keys: { p256dh: String, auth: String },
+  fechaCreacion: { type: Date, default: Date.now }
+});
+const PushSub = mongoose.model('PushSub', pushSubSchema);
+
+async function enviarPushA(destinatario, payload) {
+  if (!pushDisponible) return;
+  try {
+    const subs = await PushSub.find({ destinatario });
+    const datos = JSON.stringify(payload);
+    for (const s of subs) {
+      try {
+        await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, datos);
+      } catch(e) {
+        // Suscripción caducada o inválida (410/404): la borramos para no reintentar en vano.
+        if (e.statusCode === 410 || e.statusCode === 404) {
+          PushSub.deleteOne({ endpoint: s.endpoint }).catch(()=>{});
+        } else {
+          console.error('Error enviando push a', destinatario, ':', e.message);
+        }
+      }
+    }
+  } catch(e) { console.error('Error enviarPushA:', e.message); }
+}
+async function enviarPushATodosConductores(payload) {
+  if (!pushDisponible) return;
+  try {
+    const subs = await PushSub.find({ destinatario: { $ne: 'admin' } });
+    const datos = JSON.stringify(payload);
+    for (const s of subs) {
+      try { await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, datos); }
+      catch(e) { if (e.statusCode === 410 || e.statusCode === 404) PushSub.deleteOne({ endpoint: s.endpoint }).catch(()=>{}); }
+    }
+  } catch(e) { console.error('Error enviarPushATodosConductores:', e.message); }
+}
+const Reserva = mongoose.model('Reserva', reservaSchema);
 const Contador = mongoose.model('Contador', contadorSchema);
+const Festivo = mongoose.model('Festivo', festivoSchema);
+const Comision = mongoose.model('Comision', comisionSchema);
+const Config = mongoose.model('Config', configSchema);
+const Tarifa = mongoose.model('Tarifa', tarifaSchema);
+const Vehiculo = mongoose.model('Vehiculo', vehiculoSchema);
+
 
 async function siguienteNumeroReserva() {
-  const c = await Contador.findOneAndUpdate(
-    { nombre: 'reserva' },
-    { $inc: { valor: 1 } },
-    { new: true, upsert: true }
-  );
+  const c = await Contador.findOneAndUpdate({ nombre: 'reserva' }, { $inc: { valor: 1 } }, { new: true, upsert: true });
   return c.valor;
 }
-
-// =================== CONFIGURACIÓN AJUSTABLE ===================
-// Guarda valores que el admin puede cambiar desde el bot (se mantienen tras reinicios).
-const configSchema = new mongoose.Schema({
-  nombre: { type: String, unique: true },
-  valor: Number
-});
-const Config = mongoose.model('Config', configSchema);
-
-// Valores por defecto (en horas)
-const ANTELACION_DEFECTO = 2;        // antelación mínima para reservar
-const CANCELACION_DEFECTO = 0.5;     // margen para cancelar online (0.5 h = 30 min)
 
 async function cargarConfig() {
   try {
     const ant = await Config.findOne({ nombre: 'antelacion' });
     const can = await Config.findOne({ nombre: 'cancelacion' });
-    cacheConfig.antelacion = ant ? ant.valor : ANTELACION_DEFECTO;
-    cacheConfig.cancelacion = can ? can.valor : CANCELACION_DEFECTO;
-  } catch (e) { console.error('Error cargando config:', e.message); }
+    const pri = await Config.findOne({ nombre: 'prioridadMinutos' });
+    cacheConfig.antelacion = ant ? ant.valor : 2;
+    cacheConfig.cancelacion = can ? can.valor : 0.5;
+    cacheConfig.prioridadMinutos = pri ? pri.valor : 2;
+  } catch(e) {}
 }
 
-async function guardarConfig(nombre, valor) {
-  await Config.findOneAndUpdate({ nombre }, { valor }, { upsert: true });
-  cacheConfig[nombre] = valor;
-}
-
-// Convierte horas a texto legible: 2 -> "2 horas", 0.5 -> "30 minutos", 1 -> "1 hora"
-function horasATexto(horas) {
-  if (horas < 1) return `${Math.round(horas * 60)} minutos`;
-  if (horas === 1) return `1 hora`;
-  return `${horas} horas`;
-}
-
-
-const festivoSchema = new mongoose.Schema({
-  fecha: { type: String, unique: true },
-  descripcion: String,
-  fechaCreacion: { type: Date, default: Date.now }
-});
-
-const comisionSchema = new mongoose.Schema({
-  conductorChatId: String,
-  conductorNombre: String,
-  reservaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Reserva' },
-  precioCarrera: Number,
-  comision: Number,
-  mes: String,
-  pagada: { type: Boolean, default: false },
-  fechaCreacion: { type: Date, default: Date.now }
-});
-
-const Conductor = mongoose.model('Conductor', conductorSchema);
-const Reserva = mongoose.model('Reserva', reservaSchema);
-const Festivo = mongoose.model('Festivo', festivoSchema);
-const Comision = mongoose.model('Comision', comisionSchema);
-
-mongoose.connect(MONGODB_URI).then(async () => {
-  console.log('MongoDB conectado');
-  await cargarConfig();
-  await cargarFestivosIniciales();
-  // Migración: los conductores que ya existían antes de añadir el sistema de aprobación
-  // (campo 'aprobado' sin definir) se marcan como aprobados para que sigan recibiendo reservas.
-  try {
-    const res = await Conductor.updateMany(
-      { aprobado: { $exists: false } },
-      { $set: { aprobado: true } }
-    );
-    if (res.modifiedCount) console.log(`Conductores existentes aprobados automáticamente: ${res.modifiedCount}`);
-  } catch (e) { console.error('Error migrando conductores:', e.message); }
-  // Limpiar valores 'undefined' como string en campos de conductores
-  try {
-    await Conductor.updateMany({ licencia: 'undefined' }, { $set: { licencia: null } });
-    await Conductor.updateMany({ plaza: 'undefined' }, { $set: { plaza: null } });
-    await Conductor.updateMany({ email: 'undefined' }, { $set: { email: null } });
-    await Conductor.updateMany({ telefono: 'undefined' }, { $set: { telefono: null } });
-  } catch (e) { console.error('Error limpiando undefined:', e.message); }
-  // Limpiar reservas en estado 'asignando' que quedaron bloqueadas (por reinicios)
-  try {
-    const bloqueadas = await Reserva.updateMany({ estado: 'asignando' }, { $set: { estado: 'pendiente' } });
-    if (bloqueadas.modifiedCount) console.log(`Reservas desbloqueadas: ${bloqueadas.modifiedCount}`);
-  } catch (e) { console.error('Error desbloqueando reservas:', e.message); }
-  iniciarRecordatorios();
-  iniciarResumenMensual();
-}).catch(err => console.error('Error MongoDB:', err));
-
-async function cargarFestivosIniciales() {
+async function cargarFestivos() {
   const count = await Festivo.countDocuments();
   if (count === 0) {
     await Festivo.insertMany([
-      { fecha: '2026-01-01', descripcion: 'Año Nuevo' },
-      { fecha: '2026-01-06', descripcion: 'Reyes' },
-      { fecha: '2026-02-19', descripcion: 'Carnaval jueves' },
-      { fecha: '2026-02-20', descripcion: 'Carnaval viernes' },
-      { fecha: '2026-04-02', descripcion: 'Jueves Santo' },
-      { fecha: '2026-04-03', descripcion: 'Viernes Santo' },
-      { fecha: '2026-05-01', descripcion: 'Día del Trabajo' },
-      { fecha: '2026-05-30', descripcion: 'Día de Canarias' },
-      { fecha: '2026-06-24', descripcion: 'San Juan' },
-      { fecha: '2026-08-15', descripcion: 'Asunción' },
-      { fecha: '2026-10-12', descripcion: 'Fiesta Nacional' },
-      { fecha: '2026-11-01', descripcion: 'Todos los Santos' },
-      { fecha: '2026-12-06', descripcion: 'Constitución' },
-      { fecha: '2026-12-08', descripcion: 'Inmaculada' },
-      { fecha: '2026-12-25', descripcion: 'Navidad' },
+      { fecha: '2026-01-01', descripcion: 'Año Nuevo' }, { fecha: '2026-01-06', descripcion: 'Reyes' },
+      { fecha: '2026-04-02', descripcion: 'Jueves Santo' }, { fecha: '2026-04-03', descripcion: 'Viernes Santo' },
+      { fecha: '2026-05-01', descripcion: 'Día del Trabajo' }, { fecha: '2026-05-30', descripcion: 'Día de Canarias' },
+      { fecha: '2026-08-15', descripcion: 'Asunción' }, { fecha: '2026-10-12', descripcion: 'Fiesta Nacional' },
+      { fecha: '2026-11-01', descripcion: 'Todos los Santos' }, { fecha: '2026-12-06', descripcion: 'Constitución' },
+      { fecha: '2026-12-08', descripcion: 'Inmaculada' }, { fecha: '2026-12-25', descripcion: 'Navidad' }
     ]);
     console.log('Festivos iniciales cargados');
   }
 }
 
-const app = express();
-app.use(express.json());
-
-// --- SEO: servir la home y reservar.html con el canonical/og del dominio real ---
-// Cada dominio (reservataxilaspalmas.com y radiotaxigrancanaria.es) se presenta a
-// Google como él mismo, para que ambos posicionen por separado sin contenido duplicado.
-function servirConCanonical(nombreArchivo) {
-  return (req, res, next) => {
-    try {
-      const ruta = path.join(__dirname, 'public', nombreArchivo);
-      if (!fs.existsSync(ruta)) return next();
-      let html = fs.readFileSync(ruta, 'utf8');
-      const host = req.headers.host || 'reservataxilaspalmas.com';
-      const base = 'https://' + host + '/';
-      // Sustituir el canonical y og:url fijos por el dominio real de la petición
-      html = html.replace(/https:\/\/reservataxilaspalmas\.com\//g, base);
-      res.set('Content-Type', 'text/html; charset=utf-8');
-      return res.send(html);
-    } catch (e) { return next(); }
-  };
+// =================== MONGODB ===================
+async function cargarTarifas() {
+  const count = await Tarifa.countDocuments();
+  if (count === 0) {
+    await Tarifa.insertMany([
+      { nombre: 'diurna_bajada', valor: 3.85, descripcion: 'Bajada de bandera diurna (06:00–21:59)' },
+      { nombre: 'diurna_km', valor: 1.35, descripcion: 'Precio por km diurno' },
+      { nombre: 'diurna_aeropuerto', valor: 2.10, descripcion: 'Suplemento aeropuerto (diurno)' },
+      { nombre: 'nocturna_bajada', valor: 4.25, descripcion: 'Bajada de bandera nocturna/festiva (22:00–05:59 + dom + festivos)' },
+      { nombre: 'nocturna_km', valor: 1.55, descripcion: 'Precio por km nocturno/festivo' },
+      { nombre: 'nocturna_aeropuerto', valor: 2.10, descripcion: 'Suplemento aeropuerto (nocturno/festivo)' },
+      { nombre: 'silla_grupo0', valor: 0, descripcion: 'Silla Grupo 0 (0–13kg)' },
+      { nombre: 'silla_grupo1', valor: 0, descripcion: 'Silla Grupo 1 (9–18kg)' },
+      { nombre: 'silla_grupo2', valor: 0, descripcion: 'Silla Grupo 2 (15–25kg)' },
+      { nombre: 'silla_grupo3', valor: 0, descripcion: 'Silla Grupo 3 (22–36kg)' },
+      { nombre: 'silla_alzador', valor: 0, descripcion: 'Alzador (22–36kg)' }
+    ]);
+    console.log('Tarifas iniciales cargadas');
+  }
 }
-app.get('/', servirConCanonical('index.html'));
-app.get('/index.html', servirConCanonical('index.html'));
-app.get('/reservar.html', servirConCanonical('reservar.html'));
 
+mongoose.connect(MONGODB_URI).then(async () => {
+  console.log('MongoDB conectado');
+  await cargarConfig();
+  await cargarFestivos();
+  await cargarTarifas();
+  iniciarRecordatorios();
+  iniciarResumenMensual();
+}).catch(e => console.error('Error MongoDB:', e));
+
+// =================== EXPRESS ===================
+const app = express();
+app.use(express.json({ limit: '8mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Página para comprobar qué versión está desplegada
-app.get('/version', (req, res) => {
-  res.send(`VERSION 2 — Bloqueo de ${MINIMO_HORAS_ANTELACION}h ACTIVO ✅ | Hora Canarias: ${ahoraCanarias().toLocaleString('es-ES')}`);
-});
-
-// Configuración pública para el formulario web: le dice la antelación mínima actual
-// (en horas) para que el texto y la validación coincidan con lo que tienes en el bot.
-app.get('/config-publica', (req, res) => {
-  res.json({
-    antelacionHoras: cacheConfig.antelacion,
-    antelacionTexto: horasATexto(cacheConfig.antelacion),
-    telefono: '828 810 938'
-  });
-});
-
-// Polling con reintentos automáticos: si Telegram o la red fallan, no se rinde.
-const bot = new TelegramBot(TOKEN, {
-  polling: {
-    interval: 300,           // cada cuánto pregunta a Telegram (ms)
-    autoStart: true,
-    params: { timeout: 10 }, // espera de cada consulta (segundos)
-  }
-});
-
-// Gestión de errores de polling: el bot se recupera solo en vez de quedarse colgado.
-let avisoCaidaEnviado = false;
-bot.on('polling_error', (error) => {
-  const codigo = error && error.code ? error.code : 'desconocido';
-  console.error(`⚠️ polling_error [${codigo}]:`, error && error.message ? error.message : error);
-
-  // Error 409 = hay DOS instancias del bot a la vez (dos despliegues). Avisar y reintentar.
-  if (codigo === 'ETELEGRAM' && String(error.message).includes('409')) {
-    console.error('Conflicto 409: parece que hay dos instancias del bot ejecutándose.');
-  }
-
-  // Si es un fallo de red/conexión, reintentar el polling tras unos segundos.
-  if (codigo === 'EFATAL' || codigo === 'ETIMEDOUT' || codigo === 'ECONNRESET') {
-    setTimeout(() => {
-      bot.stopPolling().then(() => bot.startPolling()).catch(() => {});
-    }, 5000);
-  }
-});
-
-// Error general del bot (no detiene el proceso, solo lo registra).
-bot.on('error', (error) => {
-  console.error('⚠️ Error general del bot:', error && error.message ? error.message : error);
-});
-
-// Latido de salud: cada 5 minutos comprueba que el bot sigue conectado a Telegram.
-// Si se cae la conexión, avisa al admin una sola vez y trata de reconectar.
-setInterval(async () => {
+// =================== AUTH MIDDLEWARES ===================
+function authAdmin(req, res, next) {
+  const token = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'No autorizado' });
   try {
-    await bot.getMe();
-    if (avisoCaidaEnviado) {
-      avisoCaidaEnviado = false;
-      try { await bot.sendMessage(OWNER_CHAT_ID, '✅ El bot ha recuperado la conexión y funciona con normalidad.'); } catch (e) {}
-    }
-  } catch (e) {
-    console.error('⚠️ El bot no responde a getMe():', e.message);
-    if (!avisoCaidaEnviado) {
-      avisoCaidaEnviado = true;
-      try { await bot.sendMessage(OWNER_CHAT_ID, '⚠️ Aviso: el bot está teniendo problemas de conexión con Telegram. Intentando reconectar automáticamente.'); } catch (e2) {}
-    }
-    try { await bot.stopPolling(); await bot.startPolling(); } catch (e3) {}
-  }
-}, 5 * 60 * 1000);
-
-// Si ocurre un error no capturado en cualquier parte, lo registramos para que el
-// proceso NO se cierre de golpe (Railway lo reiniciaría, pero así evitamos caídas tontas).
-process.on('unhandledRejection', (motivo) => {
-  console.error('⚠️ Promesa rechazada sin gestionar:', motivo);
-});
-process.on('uncaughtException', (err) => {
-  console.error('⚠️ Excepción no capturada:', err && err.message ? err.message : err);
-});
-
-// =================== TARIFAS ===================
-
-async function determinarTarifa(fecha, hora) {
-  const horaNum = parseInt(hora.replace(':', ''));
-  const diaSemana = new Date(fecha + 'T12:00:00').getDay();
-  const esDomingo = diaSemana === 0;
-  const festivo = await Festivo.findOne({ fecha });
-  if (esDomingo || festivo) return 'festiva';
-  if (horaNum >= 600 && horaNum <= 2159) return 'diurna';
-  return 'nocturna';
+    const dec = jwt.verify(token, JWT_SECRET);
+    if (dec.role !== 'admin') return res.status(403).json({ error: 'No es admin' });
+    req.admin = dec;
+    next();
+  } catch(e) { res.status(401).json({ error: 'Token inválido' }); }
 }
 
-// Los 21 municipios de Gran Canaria (para detección por texto)
-const MUNICIPIOS_GC = [
-  'Agaete', 'Agüimes', 'Artenara', 'Arucas', 'Firgas', 'Gáldar',
-  'Ingenio', 'Mogán', 'Moya', 'Las Palmas de Gran Canaria', 'San Bartolomé de Tirajana',
-  'La Aldea de San Nicolás', 'Santa Brígida', 'Santa Lucía de Tirajana', 'Santa María de Guía',
-  'Tejeda', 'Telde', 'Teror', 'Valleseco', 'Valsequillo', 'Vega de San Mateo'
-];
-
-// Zonas turísticas conocidas y su municipio real
-const ZONAS_MUNICIPIO = {
-  'maspalomas': 'San Bartolomé de Tirajana',
-  'playa del ingles': 'San Bartolomé de Tirajana',
-  'playa del inglés': 'San Bartolomé de Tirajana',
-  'san agustin': 'San Bartolomé de Tirajana',
-  'meloneras': 'San Bartolomé de Tirajana',
-  'puerto rico': 'Mogán',
-  'puerto de mogan': 'Mogán',
-  'arguineguin': 'Mogán',
-  'vecindario': 'Santa Lucía de Tirajana',
-  'el doctoral': 'Santa Lucía de Tirajana',
-  'jinamar': 'Telde',
-  'jinámar': 'Telde'
-};
-
-// Detecta el municipio de recogida. Usa Google si hay coordenadas; si no, el texto.
-async function detectarMunicipio(origenTexto, origenCoords) {
-  // Aeropuerto: caso especial, se trata aparte
-  const t = (origenTexto || '').toLowerCase();
-  if (t.includes('aeropuerto') || t.includes('airport') || t.includes('lpa') || t.includes('gando')) {
-    return 'AEROPUERTO';
-  }
-  // 1) Con coordenadas exactas: preguntar a Google (geocodificación inversa)
-  if (origenCoords && GOOGLE_MAPS_KEY) {
-    try {
-      const municipio = await municipioDesdeCoords(origenCoords);
-      if (municipio) return municipio;
-    } catch (e) { console.error('Error municipio coords:', e.message); }
-  }
-  // 2) Sin coordenadas: buscar por texto (zonas turísticas primero, luego municipios)
-  for (const zona in ZONAS_MUNICIPIO) {
-    if (t.includes(zona)) return ZONAS_MUNICIPIO[zona];
-  }
-  for (const m of MUNICIPIOS_GC) {
-    if (t.includes(m.toLowerCase())) return m;
-  }
-  return null; // No se pudo determinar
-}
-
-function municipioDesdeCoords(coords) {
-  return new Promise((resolve, reject) => {
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(coords)}&key=${GOOGLE_MAPS_KEY}&language=es&result_type=locality|administrative_area_level_3`;
-    https.get(url, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          if (json.status === 'OK' && json.results.length > 0) {
-            for (const result of json.results) {
-              for (const comp of result.address_components) {
-                if (comp.types.includes('locality') || comp.types.includes('administrative_area_level_3')) {
-                  return resolve(comp.long_name);
-                }
-              }
-            }
-          }
-          resolve(null);
-        } catch (e) { reject(e); }
-      });
-    }).on('error', reject);
-  });
-}
-
-async function calcularDistanciaKm(origen, destino, origenCoords, destinoCoords) {
-  return new Promise((resolve, reject) => {
-    // Si hay coordenadas exactas (elegidas del autocompletar), se usan tal cual.
-    // Si no, se usa el texto con la ciudad añadida (Google adivina el punto).
-    const origenParam = origenCoords ? origenCoords : (origen + ', Las Palmas de Gran Canaria, España');
-    const destinoParam = destinoCoords ? destinoCoords : (destino + ', Las Palmas de Gran Canaria, España');
-    const origenEnc = encodeURIComponent(origenParam);
-    const destinoEnc = encodeURIComponent(destinoParam);
-    // Directions API: calcula la ruta igual que la app de Google Maps.
-    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origenEnc}&destination=${destinoEnc}&key=${GOOGLE_MAPS_KEY}&language=es&region=es&departure_time=now&traffic_model=best_guess&alternatives=false`;
-    https.get(url, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          if (json.status === 'OK' && json.routes && json.routes.length > 0) {
-            const ruta = json.routes[0];
-            let metros = 0;
-            for (const leg of ruta.legs) metros += leg.distance.value;
-            // Ajuste fijo: la API suele dar de más, se restan 800 m al recorrido.
-            metros = metros - 800;
-            if (metros < 0) metros = 0;
-            resolve(Math.round(metros / 100) / 10);
-          } else {
-            reject(new Error('Ruta no encontrada'));
-          }
-        } catch (e) { reject(e); }
-      });
-    }).on('error', reject);
-  });
-}
-
-function calcularPrecio(distanciaKm, tipo, esAeropuerto) {
-  const precioBase = tipo === 'diurna' ? 3.85 : 4.25;
-  const precioPorKm = tipo === 'diurna' ? 1.35 : 1.55;
-  let precio = precioBase + (distanciaKm * precioPorKm);
-  if (esAeropuerto) precio += 2.10;
-  return Math.round(precio * 100) / 100;
-}
-
-app.post('/calcular-tarifa', async (req, res) => {
-  const { origen, destino, fecha, hora, origenCoords, destinoCoords } = req.body;
-  if (!cumpleAntelacion(fecha, hora)) {
-    return res.json({
-      ok: false,
-      error: `No realizamos servicios inmediatos. Las reservas requieren un mínimo de ${horasATexto(cacheConfig.antelacion)} de antelación. Consultas: 828 810 938.`
-    });
-  }
-  try {
-    const distanciaKm = await calcularDistanciaKm(origen, destino, origenCoords, destinoCoords);
-    const tipo = await determinarTarifa(fecha, hora);
-    const esAeropuerto =
-      origen.toLowerCase().includes('aeropuerto') || origen.toLowerCase().includes('lpa') || origen.toLowerCase().includes('gando') ||
-      destino.toLowerCase().includes('aeropuerto') || destino.toLowerCase().includes('lpa') || destino.toLowerCase().includes('gando');
-    const precio = calcularPrecio(distanciaKm, tipo, esAeropuerto);
-    res.json({
-      ok: true,
-      precio: precio.toFixed(2),
-      distanciaKm,
-      tipo,
-      precioBase: tipo === 'diurna' ? '3,85' : '4,25',
-      km: tipo === 'diurna' ? '1,35' : '1,55',
-      suplementoAeropuerto: esAeropuerto
-    });
-  } catch (err) {
-    console.error('Error tarifa:', err.message);
-    res.json({ ok: false, error: err.message });
-  }
-});
-
-// =================== COMISIONES ===================
-
-async function registrarComision(reserva, conductorChatId) {
-  const precio = parseFloat(reserva.datos.precioEstimado);
-  if (!precio || precio <= 0) return;
-  const conductor = await Conductor.findOne({ chatId: conductorChatId });
-  // El conductor prioritario (licencia 1374) está EXENTO de comisión.
-  if (conductor && String(conductor.licencia) === String(LICENCIA_PRIORITARIA)) {
-    await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
-    return 0;
-  }
-  const comision = Math.round(precio * COMISION_PORCENTAJE) / 100;
-  const ahora = new Date();
-  const mes = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
-  // Limpiar cualquier comisión pendiente previa de esta reserva (p. ej. de un conductor anterior tras reasignar)
-  await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
-  await Comision.create({
-    conductorChatId,
-    conductorNombre: conductor ? conductor.nombre : 'Desconocido',
-    reservaId: reserva._id,
-    precioCarrera: precio,
-    comision,
-    mes
-  });
-  return comision;
-}
-
-async function obtenerDeudaConductor(conductorChatId) {
-  const comisiones = await Comision.find({ conductorChatId, pagada: false });
-  const total = comisiones.reduce((sum, c) => sum + c.comision, 0);
-  return { total: Math.round(total * 100) / 100, carreras: comisiones.length };
-}
-
-async function obtenerResumenMesConductor(conductorChatId, mes) {
-  const comisiones = await Comision.find({ conductorChatId, mes });
-  const totalCarreras = comisiones.reduce((sum, c) => sum + c.precioCarrera, 0);
-  const totalComision = comisiones.reduce((sum, c) => sum + c.comision, 0);
-  return {
-    carreras: comisiones.length,
-    totalCarreras: Math.round(totalCarreras * 100) / 100,
-    totalComision: Math.round(totalComision * 100) / 100
-  };
-}
-
-function iniciarResumenMensual() {
-  setInterval(async () => {
-    const ahora = ahoraCanarias();
-    if (ahora.getDate() === 1 && ahora.getHours() === 9 && ahora.getMinutes() < 5) {
-      const mesAnterior = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
-      const mes = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, '0')}`;
-      const nombreMes = mesAnterior.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
-      const conductores = await Conductor.find({ activo: true });
-      let resumenAdmin = `📊 *RESUMEN DE COMISIONES — ${nombreMes.toUpperCase()}*\n\n`;
-      let totalGeneral = 0;
-      for (const conductor of conductores) {
-        const resumen = await obtenerResumenMesConductor(conductor.chatId, mes);
-        if (resumen.carreras === 0) continue;
-        totalGeneral += resumen.totalComision;
-        resumenAdmin += `👤 *${conductor.nombre}*\n   Carreras: ${resumen.carreras} | Facturado: ${resumen.totalCarreras}€ | Comisión: ${resumen.totalComision}€\n\n`;
-        try {
-          await bot.sendMessage(conductor.chatId,
-            `📊 *RESUMEN DE ${nombreMes.toUpperCase()}*\n\nHas realizado *${resumen.carreras} carrera(s)* por un total de *${resumen.totalCarreras}€*.\n\n💰 Tu comisión pendiente del mes: *${resumen.totalComision}€*\n\nPor favor realiza el ingreso antes del día 7.\nIBAN: ES53 0049 0359 9924 1643 2863`,
-            { parse_mode: 'Markdown' }
-          );
-        } catch (e) {}
-      }
-      resumenAdmin += `\n💰 *TOTAL A COBRAR: ${Math.round(totalGeneral * 100) / 100}€*`;
-      bot.sendMessage(OWNER_CHAT_ID, resumenAdmin, { parse_mode: 'Markdown' });
-    }
-  }, 5 * 60 * 1000);
-}
-
-// =================== COMANDOS BOT ===================
-
-bot.onText(/\/diagcalendar/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  // Forzar reinicio del cliente en caché por si arrancó con credenciales incorrectas
-  calendarClient = null;
-
-  let informe = '🔍 *DIAGNÓSTICO GOOGLE CALENDAR*\n\n';
-  informe += `1️⃣ Variable credenciales: ${GOOGLE_CALENDAR_CREDENTIALS ? '✅ existe (' + GOOGLE_CALENDAR_CREDENTIALS.length + ' chars)' : '❌ NO existe'}\n`;
-  informe += `2️⃣ Variable CALENDAR\\_ID: ${GOOGLE_CALENDAR_ID ? `✅ ${GOOGLE_CALENDAR_ID}` : '❌ NO existe'}\n`;
-
-  try {
-    let raw = (GOOGLE_CALENDAR_CREDENTIALS || '').trim();
-    const esBase64 = !raw.startsWith('{');
-    if (esBase64) {
-      raw = Buffer.from(raw, 'base64').toString('utf-8');
-      informe += `3️⃣ Formato: Base64 ✅ (descodificado OK)\n`;
-    } else {
-      informe += `3️⃣ Formato: JSON directo\n`;
-    }
-    const cred = JSON.parse(raw);
-    informe += `4️⃣ JSON válido: ✅\n`;
-    informe += `5️⃣ client\\_email: ${cred.client_email ? '✅ ' + cred.client_email : '❌ falta'}\n`;
-    const pk = cred.private_key || '';
-    const tieneHeader = pk.includes('BEGIN PRIVATE KEY');
-    const tieneSaltos = pk.includes('\n');
-    informe += `6️⃣ private\\_key: ${tieneHeader ? '✅ header OK' : '❌ sin header'} | saltos: ${tieneSaltos ? '✅' : '❌'}\n`;
-  } catch (e) {
-    informe += `4️⃣ ❌ Error leyendo credenciales: ${e.message}\n`;
-  }
-
-  informe += `\n7️⃣ Probando conexión real con Calendar...`;
-  bot.sendMessage(OWNER_CHAT_ID, informe, { parse_mode: 'Markdown' });
-
-  try {
-    const calendar = getCalendarClient();
-    if (!calendar) {
-      bot.sendMessage(OWNER_CHAT_ID, '❌ getCalendarClient() devolvió null. Las credenciales no se pudieron procesar.');
-      return;
-    }
-    const ahora = new Date();
-    const inicio = new Date(ahora.getTime() + 24 * 60 * 60 * 1000);
-    const res = await calendar.events.insert({
-      calendarId: GOOGLE_CALENDAR_ID,
-      requestBody: {
-        summary: '✅ PRUEBA — Bot Taxi (puedes borrar este evento)',
-        start: { dateTime: inicio.toISOString(), timeZone: 'Atlantic/Canary' },
-        end: { dateTime: new Date(inicio.getTime() + 30 * 60 * 1000).toISOString(), timeZone: 'Atlantic/Canary' }
-      }
-    });
-    bot.sendMessage(OWNER_CHAT_ID, `✅ *¡FUNCIONA!* Evento de prueba creado.\nID: ${res.data.id}\n\nYa puedes borrar ese evento del calendario.`, { parse_mode: 'Markdown' });
-  } catch (e) {
-    bot.sendMessage(OWNER_CHAT_ID, `❌ *Error al conectar con Calendar:*\n\n\`${e.message}\`\n\nEnvíame esta captura.`, { parse_mode: 'Markdown' });
-  }
-});
-
-bot.onText(/\/start/, async (msg) => {
-  const chatId = String(msg.chat.id);
-  const nombre = msg.from.first_name + (msg.from.last_name ? ' ' + msg.from.last_name : '');
-  if (chatId === OWNER_CHAT_ID) {
-    bot.sendMessage(chatId,
-      '🚖 *Panel de Administración*\n\n📋 /pendientes\n✅ /asignadas\n❌ /canceladas\n🚫 /cancelarreserva ID\n🔄 /reasignar ID\n\n👥 /conductores\n🔴 /desactivar Nombre\n🟢 /activar Nombre\n🗑️ /eliminarconductor Nombre\n📊 /resumen\n\n⚙️ *Configuración:*\n/config\n/antelacion HORAS\n/cancelacion MINUTOS\n\n💰 *Comisiones:*\n/deudas\n/pagado NombreConductor\n\n📅 *Festivos:*\n/festivos\n/addfestivo YYYY-MM-DD Descripción\n/delfestivo YYYY-MM-DD',
-      { parse_mode: 'Markdown' }
-    );
-    return;
-  }
-  try {
-    const existente = await Conductor.findOne({ chatId });
-    if (!existente) {
-      // Nuevo: se registra como PENDIENTE de aprobación. No recibe reservas hasta que el admin lo apruebe.
-      await Conductor.create({ chatId, nombre, aprobado: false, activo: false });
-      bot.sendMessage(chatId, `👋 Hola ${nombre}.\n\nHas solicitado acceso como conductor. Tu solicitud está *pendiente de aprobación* por el administrador.\n\nRecibirás un aviso cuando se apruebe. Gracias por tu paciencia.`, { parse_mode: 'Markdown' });
-      bot.sendMessage(OWNER_CHAT_ID,
-        `🆕 *Solicitud de acceso de conductor*\n\n👤 Nombre: *${nombre}*\n🆔 ID: ${chatId}\n\n¿Le das acceso al bot?`,
-        {
-          parse_mode: 'Markdown',
-          reply_markup: { inline_keyboard: [[
-            { text: '✅ Aprobar', callback_data: `aprobar_${chatId}` },
-            { text: '❌ Rechazar', callback_data: `rechazarcond_${chatId}` }
-          ]]}
-        }
-      );
-    } else if (!existente.aprobado) {
-      bot.sendMessage(chatId, `👋 Hola ${nombre}, tu solicitud sigue *pendiente de aprobación*. Te avisaremos cuando se apruebe.`, { parse_mode: 'Markdown' });
-    } else {
-      bot.sendMessage(chatId, `👋 Hola ${nombre}, ya estás registrado.\n\n💡 /mideuda para ver tu comisión.`);
-    }
-  } catch (err) { console.error(err); }
-});
-
-bot.onText(/\/mideuda/, async (msg) => {
-  const chatId = String(msg.chat.id);
-  if (chatId === OWNER_CHAT_ID) return;
-  const { total, carreras } = await obtenerDeudaConductor(chatId);
-  const ahora = new Date();
-  const mes = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
-  const resumenMes = await obtenerResumenMesConductor(chatId, mes);
-  bot.sendMessage(chatId,
-    `💰 *TU COMISIÓN PENDIENTE*\n\nTotal sin pagar: *${total}€*\nCarreras pendientes: ${carreras}\n\n📅 *Este mes (${mes}):*\nCarreras: ${resumenMes.carreras} | Facturado: ${resumenMes.totalCarreras}€ | Comisión: ${resumenMes.totalComision}€\n\nIBAN: ES53 0049 0359 9924 1643 2863`,
-    { parse_mode: 'Markdown' }
-  );
-});
-
-bot.onText(/\/deudas/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const conductores = await Conductor.find({ activo: true });
-  if (!conductores.length) return bot.sendMessage(OWNER_CHAT_ID, '👥 No hay conductores.');
-  let texto = `💰 *DEUDAS DE COMISIONES*\n\n`;
-  let totalGeneral = 0;
-  for (const conductor of conductores) {
-    const { total, carreras } = await obtenerDeudaConductor(conductor.chatId);
-    if (total > 0) { texto += `👤 *${conductor.nombre}*: ${total}€ (${carreras} carreras)\n`; totalGeneral += total; }
-  }
-  texto += `\n💰 *TOTAL: ${Math.round(totalGeneral * 100) / 100}€*`;
-  bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/pagado (.+)/, async (msg, match) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const nombre = match[1].trim();
-  const conductor = await Conductor.findOne({ nombre: new RegExp(nombre, 'i') });
-  if (!conductor) return bot.sendMessage(OWNER_CHAT_ID, `❌ No encontrado: "${nombre}"`);
-  const result = await Comision.updateMany({ conductorChatId: conductor.chatId, pagada: false }, { pagada: true });
-  bot.sendMessage(OWNER_CHAT_ID, `✅ ${result.modifiedCount} comisiones pagadas para *${conductor.nombre}*`, { parse_mode: 'Markdown' });
-  try { bot.sendMessage(conductor.chatId, `✅ *Tu deuda ha sido liquidada.* Gracias por el pago. 🙏`, { parse_mode: 'Markdown' }); } catch (e) {}
-});
-
-bot.onText(/\/config/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  bot.sendMessage(OWNER_CHAT_ID,
-    `⚙️ *Configuración actual*\n\n⏱️ Antelación mínima para reservar: *${horasATexto(cacheConfig.antelacion)}*\n❌ Margen para cancelar online: *${horasATexto(cacheConfig.cancelacion)}*\n\n*Para cambiarlas:*\n/antelacion 2 → 2 horas\n/antelacion 1 → 1 hora\n/antelacion 0.5 → 30 minutos\n\n/cancelacion 30 → 30 minutos\n/cancelacion 60 → 1 hora\n/cancelacion 15 → 15 minutos`,
-    { parse_mode: 'Markdown' }
-  );
-});
-
-bot.onText(/\/antelacion (.+)/, async (msg, match) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const valor = parseFloat(match[1].trim().replace(',', '.'));
-  if (isNaN(valor) || valor < 0 || valor > 72) {
-    return bot.sendMessage(OWNER_CHAT_ID, `❌ Valor no válido. Ejemplos:\n/antelacion 2 (2 horas)\n/antelacion 0.5 (30 minutos)`);
-  }
-  await guardarConfig('antelacion', valor);
-  bot.sendMessage(OWNER_CHAT_ID, `✅ Antelación mínima para reservar cambiada a *${horasATexto(valor)}*.\n\nLas nuevas reservas ya usan este valor.`, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/cancelacion (.+)/, async (msg, match) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const minutos = parseFloat(match[1].trim().replace(',', '.'));
-  if (isNaN(minutos) || minutos < 0 || minutos > 1440) {
-    return bot.sendMessage(OWNER_CHAT_ID, `❌ Valor no válido. Indica los MINUTOS. Ejemplos:\n/cancelacion 30 (30 minutos)\n/cancelacion 60 (1 hora)`);
-  }
-  const horas = minutos / 60;
-  await guardarConfig('cancelacion', horas);
-  bot.sendMessage(OWNER_CHAT_ID, `✅ Margen para cancelar online cambiado a *${horasATexto(horas)}*.\n\nLos clientes podrán cancelar online hasta ${horasATexto(horas)} antes del servicio.`, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/festivos/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const festivos = await Festivo.find().sort({ fecha: 1 });
-  if (!festivos.length) return bot.sendMessage(OWNER_CHAT_ID, '📅 No hay festivos.');
-  let texto = `📅 *FESTIVOS (${festivos.length})*\n\n`;
-  festivos.forEach(f => { texto += `• ${f.fecha} — ${f.descripcion}\n`; });
-  bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/addfestivo (.+)/, async (msg, match) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const partes = match[1].trim().split(' ');
-  const fecha = partes[0];
-  const descripcion = partes.slice(1).join(' ') || 'Festivo';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return bot.sendMessage(OWNER_CHAT_ID, '❌ Formato: /addfestivo 2026-12-25 Navidad');
-  try {
-    await Festivo.create({ fecha, descripcion });
-    bot.sendMessage(OWNER_CHAT_ID, `✅ Festivo añadido: *${fecha}* — ${descripcion}`, { parse_mode: 'Markdown' });
-  } catch (e) { bot.sendMessage(OWNER_CHAT_ID, `⚠️ Esa fecha ya existe.`); }
-});
-
-bot.onText(/\/delfestivo (.+)/, async (msg, match) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const fecha = match[1].trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return bot.sendMessage(OWNER_CHAT_ID, '❌ Formato: /delfestivo 2026-12-25');
-  const resultado = await Festivo.deleteOne({ fecha });
-  if (resultado.deletedCount > 0) bot.sendMessage(OWNER_CHAT_ID, `✅ Festivo eliminado: *${fecha}*`, { parse_mode: 'Markdown' });
-  else bot.sendMessage(OWNER_CHAT_ID, `❌ No encontrado: ${fecha}`);
-});
-
-bot.onText(/\/pendientes/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  // Solo mostrar las pendientes cuyo servicio aún no ha pasado (margen de 1h).
-  const limite = new Date(Date.now() - 60 * 60 * 1000);
-  const reservas = await Reserva.find({
-    estado: 'pendiente',
-    $or: [ { fechaServicio: { $gte: limite } }, { fechaServicio: null }, { fechaServicio: { $exists: false } } ]
-  }).sort({ fechaServicio: 1 }).limit(10);
-  if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '📋 No hay reservas pendientes.');
-  let texto = `📋 *PENDIENTES (${reservas.length})*\n\n`;
-  reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n   🆔 \`${r._id}\`\n\n`; });
-  texto += `\n💡 Para cancelar: /cancelarreserva ID`;
-  bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/asignadas/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  // Solo mostrar las asignadas cuyo servicio aún no ha pasado (margen de 1h).
-  const limite = new Date(Date.now() - 60 * 60 * 1000);
-  const reservas = await Reserva.find({
-    estado: 'asignada',
-    $or: [ { fechaServicio: { $gte: limite } }, { fechaServicio: null }, { fechaServicio: { $exists: false } } ]
-  }).sort({ fechaServicio: 1 }).limit(10);
-  if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '✅ No hay asignadas.');
-  let texto = `✅ *ASIGNADAS (${reservas.length})*\n\n`;
-  reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n   🆔 \`${r._id}\`\n\n`; });
-  texto += `\n💡 Cancelar: /cancelarreserva ID\n🔄 Cambiar de taxista: /reasignar ID`;
-  bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/canceladas/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const reservas = await Reserva.find({ estado: 'cancelada' }).sort({ fechaCreacion: -1 }).limit(10);
-  if (!reservas.length) return bot.sendMessage(OWNER_CHAT_ID, '❌ No hay canceladas.');
-  let texto = `❌ *CANCELADAS (${reservas.length})*\n\n`;
-  reservas.forEach((r, i) => { texto += `*${i+1}.* ${r.datos.nombre} — ${r.datos.fecha} ${r.datos.hora}\n   📍 ${r.datos.origen} → ${r.datos.destino}\n\n`; });
-  bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/cancelarreserva (.+)/, async (msg, match) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const reservaId = match[1].trim();
-  try {
-    const reserva = await Reserva.findById(reservaId);
-    if (!reserva) return bot.sendMessage(OWNER_CHAT_ID, `❌ No se encontró ninguna reserva con ese ID.`);
-    if (reserva.estado === 'cancelada') return bot.sendMessage(OWNER_CHAT_ID, `⚠️ Esa reserva ya estaba cancelada.`);
-    reserva.estado = 'cancelada';
-    await reserva.save();
-    // Borrar el evento del calendario si existía
-    await borrarEventoCalendario(reserva.eventoCalendarioId);
-    // Anular la comisión: una reserva cancelada no genera cobro al conductor
-    const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
-    let aviso = `❌ *Reserva cancelada*\n\n${formatearReserva(reserva.datos, true)}`;
-    if (comisionesBorradas.deletedCount > 0) aviso += `\n💰 Comisión anulada al conductor.`;
-    bot.sendMessage(OWNER_CHAT_ID, aviso, { parse_mode: 'Markdown' });
-    // Avisar al conductor asignado
-    if (reserva.conductorAsignado) {
-      try { bot.sendMessage(reserva.conductorAsignado, `❌ *Servicio cancelado*\n\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}${comisionesBorradas.deletedCount > 0 ? '\n\n💰 La comisión de este servicio ha sido anulada.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
-    }
-    // Avisar al cliente si reservó por Telegram
-    if (reserva.clienteChatId) {
-      try { bot.sendMessage(reserva.clienteChatId, `❌ *Tu reserva ha sido cancelada.*\n\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}\n\nPara cualquier consulta: 828 810 938`, { parse_mode: 'Markdown' }); } catch (e) {}
-    }
-  } catch (err) {
-    console.error(err);
-    bot.sendMessage(OWNER_CHAT_ID, `❌ ID no válido. Copia el ID completo desde /pendientes o /asignadas.`);
-  }
-});
-
-bot.onText(/\/reasignar (.+)/, async (msg, match) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const reservaId = match[1].trim();
-  try {
-    const reserva = await Reserva.findById(reservaId);
-    if (!reserva) return bot.sendMessage(OWNER_CHAT_ID, `❌ No se encontró ninguna reserva con ese ID.`);
-    if (reserva.estado === 'cancelada') return bot.sendMessage(OWNER_CHAT_ID, `⚠️ Esa reserva está cancelada, no se puede reasignar.`);
-    if (reserva.estado === 'pendiente') return bot.sendMessage(OWNER_CHAT_ID, `⚠️ Esa reserva ya está pendiente, ningún conductor la tiene asignada.`);
-
-    const conductorAnterior = reserva.conductorAsignado;
-    const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
-
-    if (conductorAnterior) {
-      try { bot.sendMessage(conductorAnterior, `🔄 *Servicio reasignado*\n\nEl servicio del ${reserva.datos.fecha} a las ${reserva.datos.hora} (${reserva.datos.origen} → ${reserva.datos.destino}) ha sido retirado y ofrecido a otros conductores.${comisionesBorradas.deletedCount > 0 ? '\n\n💰 La comisión de este servicio ya no se te cobrará.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
-    }
-
-    // Editar los mensajes viejos de todos los conductores antes de reasignar
-    for (const msg of (reserva.mensajesEnviados || [])) {
-      try { bot.editMessageText(`🔄 *Servicio reasignado por el administrador*`, { chat_id: msg.chatId, message_id: msg.messageId, parse_mode: 'Markdown' }); } catch (e) {}
-    }
-
-    reserva.estado = 'pendiente';
-    reserva.conductorAsignado = null;
-    reserva.mensajesEnviados = []; // Limpiar para que todos vuelvan a recibir la reserva
-    await reserva.save();
-
-    // Al reasignar: enviar a TODOS a la vez excepto al conductor que la tenía
-    const todosActivos = await Conductor.find({ activo: true });
-    const sinAnterior = todosActivos.filter(c => String(c.chatId) !== String(conductorAnterior));
-    const numConductores = await enviarReservaA(reserva, sinAnterior);
-    bot.sendMessage(OWNER_CHAT_ID, `🔄 Reserva reasignada\n\nVuelve a estar pendiente y se ha enviado a ${numConductores} conductor(es). La comisión pasará a quien la acepte.\n\n${formatearReserva(reserva.datos, true)}`);
-  } catch (err) {
-    console.error(err);
-    bot.sendMessage(OWNER_CHAT_ID, `❌ ID no válido. Copia el ID completo desde /asignadas.`);
-  }
-});
-
-bot.onText(/\/conductores/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const conductores = await Conductor.find().sort({ fechaRegistro: -1 });
-  if (!conductores.length) return bot.sendMessage(OWNER_CHAT_ID, '👥 No hay conductores.');
-  let texto = `👥 *CONDUCTORES (${conductores.length})*\n\n`;
-  conductores.forEach((c, i) => {
-    const lic = c.licencia ? ` (lic. ${c.licencia}${String(c.licencia) === String(LICENCIA_PRIORITARIA) ? ' ⭐' : ''})` : '';
-    let estado;
-    if (!c.aprobado) estado = '⏳ Pendiente de aprobar';
-    else if (c.activo) estado = '🟢 Activo';
-    else estado = '🔴 Inactivo';
-    texto += `*${i+1}.* ${c.nombre}${lic} — ${estado}\n`;
-  });
-  texto += `\n💡 Para pausar/activar:\n/desactivar NombreConductor\n/activar NombreConductor\n\n🪪 Asignar licencia:\n/licencia NombreConductor Número`;
-  bot.sendMessage(OWNER_CHAT_ID, texto, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/desactivar (.+)/, async (msg, match) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const nombre = match[1].trim();
-  const conductor = await Conductor.findOne({ nombre: new RegExp(nombre, 'i') });
-  if (!conductor) return bot.sendMessage(OWNER_CHAT_ID, `❌ No encontrado: "${nombre}"`);
-  conductor.activo = false;
-  await conductor.save();
-  bot.sendMessage(OWNER_CHAT_ID, `🔴 *${conductor.nombre}* desactivado. No recibirá nuevas reservas hasta que lo reactives.`, { parse_mode: 'Markdown' });
-  try { bot.sendMessage(conductor.chatId, `🔴 Has sido puesto en pausa temporalmente. No recibirás reservas hasta nuevo aviso.`); } catch (e) {}
-});
-
-bot.onText(/\/activar (.+)/, async (msg, match) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const nombre = match[1].trim();
-  const conductor = await Conductor.findOne({ nombre: new RegExp(nombre, 'i') });
-  if (!conductor) return bot.sendMessage(OWNER_CHAT_ID, `❌ No encontrado: "${nombre}"`);
-  conductor.activo = true;
-  await conductor.save();
-  bot.sendMessage(OWNER_CHAT_ID, `🟢 *${conductor.nombre}* activado. Ya vuelve a recibir reservas.`, { parse_mode: 'Markdown' });
-  try { bot.sendMessage(conductor.chatId, `🟢 Ya estás activo de nuevo. Volverás a recibir reservas.`); } catch (e) {}
-});
-
-bot.onText(/\/licencia (.+)/, async (msg, match) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  // Formato: /licencia NombreConductor NúmeroLicencia   (ej: /licencia Taxi L.M 1374)
-  const partes = match[1].trim().split(/\s+/);
-  if (partes.length < 2) {
-    return bot.sendMessage(OWNER_CHAT_ID, `Uso: /licencia NombreConductor Número\n\nEjemplo: /licencia Taxi L.M 1374`);
-  }
-  const numLicencia = partes[partes.length - 1];       // el último trozo es la licencia
-  const nombre = partes.slice(0, -1).join(' ');         // lo anterior es el nombre
-  const conductor = await Conductor.findOne({ nombre: new RegExp(nombre, 'i') });
-  if (!conductor) return bot.sendMessage(OWNER_CHAT_ID, `❌ No encontrado: "${nombre}"`);
-  conductor.licencia = numLicencia;
-  await conductor.save();
-  const esPrioritario = String(numLicencia) === String(LICENCIA_PRIORITARIA);
-  bot.sendMessage(OWNER_CHAT_ID, `✅ Licencia ${numLicencia} asignada a *${conductor.nombre}*.${esPrioritario ? `\n\n⭐ Este conductor ahora es PRIORITARIO: recibirá cada reserva en exclusiva durante ${MINUTOS_PRIORIDAD} min y sin comisión.` : ''}`, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/eliminarconductor (.+)/, async (msg, match) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const nombre = match[1].trim();
-  const conductor = await Conductor.findOne({ nombre: new RegExp(nombre, 'i') });
-  if (!conductor) return bot.sendMessage(OWNER_CHAT_ID, `❌ No encontrado: "${nombre}"`);
-  // Pedir confirmación con botón, porque es permanente
-  bot.sendMessage(OWNER_CHAT_ID,
-    `⚠️ *¿Eliminar a ${conductor.nombre} definitivamente?*\n\nEsta acción es permanente: se borra el conductor del sistema. Su historial de comisiones ya cobradas se conserva.\n\nSi solo quieres que deje de recibir reservas temporalmente, usa /desactivar.`,
-    {
-      parse_mode: 'Markdown',
-      reply_markup: { inline_keyboard: [[
-        { text: '🗑️ Sí, eliminar', callback_data: `delconductor_${conductor.chatId}` },
-        { text: '↩️ No, cancelar', callback_data: 'no_delconductor' }
-      ]]}
-    }
-  );
-});
-
-bot.onText(/\/resumen/, async (msg) => {
-  if (String(msg.chat.id) !== OWNER_CHAT_ID) return;
-  const hoy = new Date(); hoy.setHours(0,0,0,0);
-  const manana = new Date(hoy); manana.setDate(manana.getDate()+1);
-  const [pendientes, asignadas, canceladas, conductores] = await Promise.all([
-    Reserva.countDocuments({ estado: 'pendiente', fechaCreacion: { $gte: hoy, $lt: manana } }),
-    Reserva.countDocuments({ estado: 'asignada', fechaCreacion: { $gte: hoy, $lt: manana } }),
-    Reserva.countDocuments({ estado: 'cancelada', fechaCreacion: { $gte: hoy, $lt: manana } }),
-    Conductor.countDocuments({ activo: true })
-  ]);
-  bot.sendMessage(OWNER_CHAT_ID, `📊 *RESUMEN HOY*\n\n📋 Pendientes: ${pendientes}\n✅ Asignadas: ${asignadas}\n❌ Canceladas: ${canceladas}\n👥 Conductores: ${conductores}`, { parse_mode: 'Markdown' });
-});
-
-bot.onText(/\/cancelar/, async (msg) => {
-  const chatId = String(msg.chat.id);
-  if (chatId === OWNER_CHAT_ID) return;
-  const reserva = await Reserva.findOne({ clienteChatId: chatId, estado: { $in: ['pendiente', 'asignada'] } }).sort({ fechaCreacion: -1 });
-  if (!reserva) return bot.sendMessage(chatId, '❌ No tienes ninguna reserva activa.');
-  const d = reserva.datos;
-  bot.sendMessage(chatId, `⚠️ *¿Cancelar esta reserva?*\n\n📅 ${d.fecha} a las ${d.hora}\n📍 ${d.origen} → ${d.destino}`, {
-    parse_mode: 'Markdown',
-    reply_markup: { inline_keyboard: [[
-      { text: '❌ Sí, cancelar', callback_data: `confirmar_cancelar_${reserva._id}` },
-      { text: '✅ No, mantener', callback_data: 'no_cancelar' }
-    ]]}
-  });
-});
-
-// =================== CALLBACKS ===================
-
-// Reparte una reserva (ya existente y en estado pendiente) a todos los conductores activos.
-// Envía la reserva a un conjunto de conductores y acumula los mensajes enviados.
-async function enviarReservaA(reserva, conductores) {
-  const mensajesEnviados = Array.isArray(reserva.mensajesEnviados) ? [...reserva.mensajesEnviados] : [];
-  const yaEnviados = new Set(mensajesEnviados.map(m => String(m.chatId)));
-  const texto = `🚖 NUEVA RESERVA DISPONIBLE — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, 'disponible')}\n⏰ Responde rápido para aceptarla.`;
-  for (const conductor of conductores) {
-    if (yaEnviados.has(String(conductor.chatId))) continue; // no enviar dos veces al mismo
-    try {
-      const msg = await bot.sendMessage(conductor.chatId, texto, {
-        reply_markup: { inline_keyboard: [[
-          { text: '✅ Aceptar', callback_data: `aceptar_${reserva._id}` },
-          { text: '❌ Rechazar', callback_data: `rechazar_${reserva._id}` }
-        ]]}
-      });
-      mensajesEnviados.push({ chatId: conductor.chatId, messageId: msg.message_id });
-    } catch (e) { console.error(`Error enviando a conductor:`, e.message); }
-  }
-  reserva.mensajesEnviados = mensajesEnviados;
-  await reserva.save();
-  // Notificación push a conductores con app web
-  try {
-    const d = reserva.datos;
-    await enviarPushAConductores(conductores, '🚖 Nueva reserva disponible', `${d.fecha} ${d.hora} · ${d.origen} → ${d.destino}`);
-  } catch (e) {}
-  // Notificación push al admin
-  try {
-    if (adminPushSubscription && VAPID_PUBLIC && VAPID_PRIVATE) {
-      const d = reserva.datos;
-      await webpush.sendNotification(adminPushSubscription, JSON.stringify({
-        title: `🚖 Nueva reserva — ${numReserva(reserva.numero)}`,
-        body: `${d.fecha} ${d.hora} · ${d.origen} → ${d.destino} · ${d.nombre}`
-      }));
-    }
-  } catch (e) {
-    if (e.statusCode === 410) adminPushSubscription = null;
-  }
-  return mensajesEnviados.length;
-}
-
-async function repartirReservaAConductores(reserva) {
-  const conductores = await Conductor.find({ activo: true });
-  // ¿Hay un conductor prioritario (licencia 1374) activo?
-  const prioritario = conductores.find(c => String(c.licencia) === String(LICENCIA_PRIORITARIA));
-
-  if (prioritario) {
-    // FASE 1: enviar SOLO al conductor prioritario y esperar X minutos.
-    await enviarReservaA(reserva, [prioritario]);
-    // Push inmediato al prioritario
-    try {
-      const d = reserva.datos;
-      await enviarPushAConductores([prioritario], '⭐ Reserva exclusiva para ti', `${d.fecha} ${d.hora} · ${d.origen} → ${d.destino} — Tienes ${MINUTOS_PRIORIDAD} min`);
-    } catch(e) {}
-    try { bot.sendMessage(OWNER_CHAT_ID, `⭐ Reserva ${numReserva(reserva.numero)} enviada en exclusiva a ${prioritario.nombre} (lic. ${LICENCIA_PRIORITARIA}) durante ${MINUTOS_PRIORIDAD} min.`); } catch (e) {}
-    // Programar el reparto al resto si no la acepta a tiempo.
-    setTimeout(async () => {
-      try {
-        const actual = await Reserva.findById(reserva._id);
-        if (!actual || actual.estado !== 'pendiente') return; // ya la aceptó (él u otro), no hacer nada
-        const activos = await Conductor.find({ activo: true });
-        const resto = activos.filter(c => String(c.licencia) !== String(LICENCIA_PRIORITARIA));
-        if (resto.length) {
-          await enviarReservaA(actual, resto);
-          try { bot.sendMessage(OWNER_CHAT_ID, `⏱️ ${prioritario.nombre} no aceptó ${numReserva(actual.numero)} en ${MINUTOS_PRIORIDAD} min. Enviada al resto de conductores.`); } catch (e) {}
-        }
-      } catch (e) { console.error('Error en reparto diferido:', e.message); }
-    }, MINUTOS_PRIORIDAD * 60 * 1000);
-    return 1;
-  }
-
-  // Si no hay conductor prioritario, reparto normal a todos.
-  return await enviarReservaA(reserva, conductores);
-}
-
-bot.on('callback_query', async (query) => {
-  const chatId = String(query.message.chat.id);
-  const messageId = query.message.message_id;
-  const data = query.data;
-
-  // Aprobar un conductor pendiente (solo el admin)
-  if (data.startsWith('aprobar_')) {
-    if (chatId !== OWNER_CHAT_ID) { bot.answerCallbackQuery(query.id, { text: 'Solo el administrador.' }); return; }
-    const condChatId = data.replace('aprobar_', '');
-    try {
-      const conductor = await Conductor.findOne({ chatId: condChatId });
-      if (!conductor) { bot.answerCallbackQuery(query.id, { text: 'Conductor no encontrado.' }); return; }
-      conductor.aprobado = true;
-      conductor.activo = true;
-      await conductor.save();
-      bot.editMessageText(`✅ Conductor *${conductor.nombre}* aprobado. Ya recibe reservas.`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-      try { bot.sendMessage(condChatId, `✅ *¡Acceso aprobado!*\n\nYa estás dado de alta como conductor. A partir de ahora recibirás las reservas disponibles.\n\n💡 /mideuda para ver tu comisión.`, { parse_mode: 'Markdown' }); } catch (e) {}
-      bot.answerCallbackQuery(query.id, { text: '✅ Aprobado' });
-    } catch (e) { console.error(e); bot.answerCallbackQuery(query.id, { text: 'Error.' }); }
-    return;
-  }
-
-  // Rechazar un conductor pendiente: se elimina del todo (solo el admin)
-  if (data.startsWith('rechazarcond_')) {
-    if (chatId !== OWNER_CHAT_ID) { bot.answerCallbackQuery(query.id, { text: 'Solo el administrador.' }); return; }
-    const condChatId = data.replace('rechazarcond_', '');
-    try {
-      const conductor = await Conductor.findOne({ chatId: condChatId });
-      const nombre = conductor ? conductor.nombre : 'Conductor';
-      await Conductor.deleteOne({ chatId: condChatId });
-      bot.editMessageText(`❌ Solicitud de *${nombre}* rechazada. No tiene acceso al bot.`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-      try { bot.sendMessage(condChatId, `❌ Tu solicitud de acceso no ha sido aprobada. Si crees que es un error, contacta con el administrador.`); } catch (e) {}
-      bot.answerCallbackQuery(query.id, { text: 'Rechazado' });
-    } catch (e) { console.error(e); bot.answerCallbackQuery(query.id, { text: 'Error.' }); }
-    return;
-  }
-
-  if (data.startsWith('aceptar_')) {
-    const reservaId = data.replace('aceptar_', '');
-    try {
-      const reserva = await Reserva.findById(reservaId);
-      if (!reserva || reserva.estado !== 'pendiente') {
-        bot.answerCallbackQuery(query.id, { text: '❌ Esta reserva ya fue asignada.', show_alert: true });
-        return;
-      }
-      reserva.estado = 'asignada';
-      reserva.conductorAsignado = chatId;
-      const conductor = await Conductor.findOne({ chatId });
-      const nombreConductor = conductor ? conductor.nombre : 'Un conductor';
-      // Nombre con licencia para mostrar al cliente (ej: "Taxi L.M (Licencia 1374)")
-      const conductorConLicencia = (conductor && conductor.licencia) ? `${nombreConductor} (Licencia ${conductor.licencia})` : nombreConductor;
-      reserva.conductorNombre = nombreConductor;
-      await reserva.save();
-      const comision = await registrarComision(reserva, chatId);
-      const comisionTxt = comision ? `\n💰 Comisión registrada: ${comision}€` : '';
-
-      // Mensaje al taxista con botones de navegación y completado
-      bot.editMessageText(`✅ Reserva aceptada — ${numReserva(reserva.numero)}\n\nHas aceptado este servicio.${comisionTxt}`, { chat_id: chatId, message_id: messageId });
-
-      // Enlace a Google Maps para la recogida: usa coordenadas exactas si las hay,
-      // y si no, la dirección de texto. Sirve para que el conductor navegue directo.
-      const recogida = (reserva.datos.origenCoords && reserva.datos.origenCoords.includes(','))
-        ? reserva.datos.origenCoords
-        : reserva.datos.origen;
-      const enlaceMapa = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(recogida)}&travelmode=driving`;
-
-      bot.sendMessage(chatId, `📋 Detalles del servicio:\n\n${formatearReserva(reserva.datos, false)}`, {
-        reply_markup: { inline_keyboard: [
-          [ { text: '🧭 Ir a la recogida (Google Maps)', url: enlaceMapa } ],
-          [ { text: '🏁 Marcar servicio completado', callback_data: `completar_${reserva._id}` } ]
-        ]}
-      });
-      bot.sendMessage(OWNER_CHAT_ID, `✅ Reserva asignada — ${numReserva(reserva.numero)}\n\nConductor: ${nombreConductor}\n\n${formatearReserva(reserva.datos, true)}`);
-
-      // Actualizar TODOS los demás mensajes de esta reserva (de todos los reenvíos,
-      // de cualquier taxista) a "Servicio ya asignado". Solo se salta el mensaje
-      // concreto que el taxista acaba de pulsar (ese ya se editó arriba).
-      for (const msg of reserva.mensajesEnviados) {
-        if (String(msg.messageId) === String(messageId) && msg.chatId === chatId) continue;
-        try { bot.editMessageText(`⚠️ *Servicio ya asignado*`, { chat_id: msg.chatId, message_id: msg.messageId, parse_mode: 'Markdown' }); } catch (e) {}
-      }
-
-      if (reserva.clienteChatId) {
-        const d = reserva.datos;
-        const precioTxt = d.precioEstimado ? `\n💰 *Precio estimado:* ${d.precioEstimado} €` : '';
-        try {
-          bot.sendMessage(reserva.clienteChatId,
-            `✅ *¡Tu reserva ha sido aceptada!*\n\n🎫 *Reserva:* ${numReserva(reserva.numero)}\n📅 *Fecha:* ${d.fecha} a las ${d.hora}\n📍 *Origen:* ${d.origen}\n🏁 *Destino:* ${d.destino}${precioTxt}\n\n🚖 *Tu conductor:* ${conductorConLicencia}\nEstará contigo a la hora indicada.\n\n❌ Para cancelar escribe /cancelar`,
-            { parse_mode: 'Markdown' }
-          );
-        } catch (e) {}
-      }
-
-      // Enviar email de confirmación SIEMPRE (web, WhatsApp, Telegram, Facebook...)
-      // Solo se omite si la reserva no tiene correo.
-      await enviarEmailConfirmacion(reserva.datos, reserva._id, conductorConLicencia, reserva.numero);
-
-      // Crear el evento en Google Calendar del administrador
-      try {
-        const eventoId = await crearEventoCalendario(reserva, conductorConLicencia);
-        if (eventoId) {
-          reserva.eventoCalendarioId = eventoId;
-          await reserva.save();
-        }
-      } catch (e) { console.error('No se pudo crear evento de calendario:', e.message); }
-
-      bot.answerCallbackQuery(query.id, { text: '✅ ¡Reserva aceptada!' });
-    } catch (err) {
-      console.error(err);
-      bot.answerCallbackQuery(query.id, { text: 'Error. Inténtalo de nuevo.' });
-    }
-  }
-
-  if (data.startsWith('rechazar_')) {
-    bot.answerCallbackQuery(query.id, { text: 'Has rechazado este servicio.' });
-    bot.editMessageText(`❌ *Servicio rechazado*`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-  }
-
-  if (data.startsWith('completar_')) {
-    const reservaId = data.replace('completar_', '');
-    try {
-      const reserva = await Reserva.findById(reservaId);
-      if (!reserva) { bot.answerCallbackQuery(query.id, { text: 'Reserva no encontrada.' }); return; }
-      if (reserva.estado === 'completada') { bot.answerCallbackQuery(query.id, { text: 'Ya estaba marcada como completada.' }); return; }
-      if (reserva.conductorAsignado !== chatId) { bot.answerCallbackQuery(query.id, { text: 'Este servicio no es tuyo.', show_alert: true }); return; }
-      reserva.estado = 'completada';
-      await reserva.save();
-      bot.editMessageText(`🏁 Servicio completado — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, false)}\n✅ ¡Gracias!`, { chat_id: chatId, message_id: messageId });
-      bot.sendMessage(OWNER_CHAT_ID, `🏁 *Servicio completado* — ${numReserva(reserva.numero)}\n\nConductor: ${reserva.conductorNombre || 'Desconocido'}\n${reserva.datos.origen} → ${reserva.datos.destino}`, { parse_mode: 'Markdown' });
-      bot.answerCallbackQuery(query.id, { text: '🏁 Servicio marcado como completado' });
-    } catch (err) {
-      console.error(err);
-      bot.answerCallbackQuery(query.id, { text: 'Error. Inténtalo de nuevo.' });
-    }
-  }
-
-  if (data.startsWith('confirmar_cancelar_')) {
-    const reservaId = data.replace('confirmar_cancelar_', '');
-    try {
-      const reserva = await Reserva.findById(reservaId);
-      if (!reserva || reserva.estado === 'cancelada') { bot.answerCallbackQuery(query.id, { text: 'Ya cancelada.' }); return; }
-      reserva.estado = 'cancelada';
-      await reserva.save();
-      await borrarEventoCalendario(reserva.eventoCalendarioId);
-      // Anular la comisión del conductor: una reserva cancelada no genera cobro
-      const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
-      bot.editMessageText(`❌ *Reserva cancelada correctamente.*`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-      bot.sendMessage(OWNER_CHAT_ID, `❌ Cancelada por cliente\n\n${formatearReserva(reserva.datos, true)}`);
-      if (reserva.conductorAsignado) {
-        try { bot.sendMessage(reserva.conductorAsignado, `❌ *Servicio cancelado*\n\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}${comisionesBorradas.deletedCount > 0 ? '\n\n💰 La comisión de este servicio ha sido anulada.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
-      }
-      bot.answerCallbackQuery(query.id, { text: '❌ Reserva cancelada' });
-    } catch (err) { console.error(err); }
-  }
-
-  if (data === 'no_cancelar') {
-    bot.editMessageText(`✅ Tu reserva sigue activa.`, { chat_id: chatId, message_id: messageId });
-    bot.answerCallbackQuery(query.id, { text: 'Cancelación abortada' });
-  }
-
-  if (data.startsWith('delconductor_')) {
-    if (chatId !== OWNER_CHAT_ID) { bot.answerCallbackQuery(query.id); return; }
-    const conductorChatId = data.replace('delconductor_', '');
-    try {
-      const conductor = await Conductor.findOne({ chatId: conductorChatId });
-      if (!conductor) { bot.editMessageText(`❌ El conductor ya no existe.`, { chat_id: chatId, message_id: messageId }); bot.answerCallbackQuery(query.id); return; }
-      const nombre = conductor.nombre;
-      await Conductor.deleteOne({ chatId: conductorChatId });
-      bot.editMessageText(`🗑️ Conductor *${nombre}* eliminado del sistema.`, { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' });
-      bot.answerCallbackQuery(query.id, { text: 'Conductor eliminado' });
-    } catch (err) {
-      console.error(err);
-      bot.answerCallbackQuery(query.id, { text: 'Error al eliminar.' });
-    }
-  }
-
-  if (data === 'no_delconductor') {
-    bot.editMessageText(`↩️ Eliminación cancelada. El conductor sigue en el sistema.`, { chat_id: chatId, message_id: messageId });
-    bot.answerCallbackQuery(query.id, { text: 'Cancelado' });
-  }
-
-  // Aprobar conductor registrado desde la app web
-  if (data.startsWith('aprobar_web_')) {
-    const conductorId = data.replace('aprobar_web_', '');
-    try {
-      const conductor = await Conductor.findByIdAndUpdate(conductorId, { aprobado: true }, { new: true });
-      if (!conductor) return bot.answerCallbackQuery(query.id, { text: 'Conductor no encontrado' });
-      bot.answerCallbackQuery(query.id, { text: `✅ ${conductor.nombre} aprobado` });
-      bot.editMessageText(`✅ Conductor aprobado: ${conductor.nombre}`, { chat_id: query.message.chat.id, message_id: query.message.message_id });
-      if (conductor.email && BREVO_API_KEY) {
-        await enviarEmailBrevo({
-          sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
-          to: [{ email: conductor.email, name: conductor.nombre }],
-          subject: '✅ Tu cuenta ha sido aprobada',
-          htmlContent: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px"><h2 style="color:#f5c400">🚖 ¡Bienvenido, ${conductor.nombre}!</h2><p>Tu cuenta de conductor ha sido aprobada. Ya puedes entrar en la app:</p><a href="https://reservataxilaspalmas.com/conductores" style="display:inline-block;background:#f5c400;color:#000;padding:12px 24px;border-radius:8px;font-weight:bold;text-decoration:none;margin-top:16px">Entrar a la app</a></div>`
-        });
-      }
-    } catch (e) { bot.answerCallbackQuery(query.id, { text: 'Error: ' + e.message }); }
-    return;
-  }
-
-  if (data.startsWith('rechazar_web_')) {
-    const conductorId = data.replace('rechazar_web_', '');
-    try {
-      const conductor = await Conductor.findByIdAndDelete(conductorId);
-      if (!conductor) return bot.answerCallbackQuery(query.id, { text: 'Conductor no encontrado' });
-      bot.answerCallbackQuery(query.id, { text: `❌ ${conductor.nombre} rechazado` });
-      bot.editMessageText(`❌ Conductor rechazado: ${conductor.nombre}`, { chat_id: query.message.chat.id, message_id: query.message.message_id });
-      if (conductor.email && BREVO_API_KEY) {
-        await enviarEmailBrevo({
-          sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
-          to: [{ email: conductor.email, name: conductor.nombre }],
-          subject: 'Solicitud de registro no aprobada',
-          htmlContent: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px"><h2 style="color:#f5c400">Reserva Taxi Las Palmas</h2><p>Hola ${conductor.nombre}, lamentablemente tu solicitud de registro no ha sido aprobada. Para más información contacta al administrador.</p></div>`
-        });
-      }
-    } catch (e) { bot.answerCallbackQuery(query.id, { text: 'Error: ' + e.message }); }
-    return;
-  }
-});
-
-// =================== RECORDATORIOS ===================
-
-function iniciarRecordatorios() {
-  setInterval(async () => {
-    try {
-      const ahora = ahoraCanarias();
-      const en60min = new Date(ahora.getTime() + 60 * 60 * 1000);
-      const en55min = new Date(ahora.getTime() + 55 * 60 * 1000);
-
-      // 1) Recordatorio al TAXISTA (1h antes)
-      const reservas = await Reserva.find({ estado: 'asignada', recordatorioEnviado: false, fechaServicio: { $gte: en55min, $lte: en60min } });
-      for (const reserva of reservas) {
-        try { bot.sendMessage(reserva.conductorAsignado, `⏰ RECORDATORIO — Servicio en 1 hora — ${numReserva(reserva.numero)}\n\n${formatearReserva(reserva.datos, false)}`); } catch (e) {}
-        bot.sendMessage(OWNER_CHAT_ID, `⏰ Recordatorio enviado al taxista\n\n${formatearReserva(reserva.datos, true)}`);
-        reserva.recordatorioEnviado = true;
-        await reserva.save();
-      }
-
-      // 2) Recordatorio al CLIENTE (1h antes), por email
-      const reservasCliente = await Reserva.find({ estado: { $in: ['asignada'] }, recordatorioClienteEnviado: false, fechaServicio: { $gte: en55min, $lte: en60min } });
-      for (const reserva of reservasCliente) {
-        if (reserva.datos && reserva.datos.correo && BREVO_API_KEY) {
-          try {
-            await enviarEmailBrevo({
-              sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
-              to: [{ email: reserva.datos.correo, name: reserva.datos.nombre }],
-              subject: 'Recordatorio: tu taxi llega en 1 hora',
-              htmlContent: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f9f9f9;max-width:600px;margin:0 auto;">
-                <h2 style="color:#f5c400;background:#1a1a1a;padding:16px;border-radius:8px;">🚖 Reserva Taxi Las Palmas</h2>
-                <h3 style="color:#2d8a2d;">⏰ Tu taxi llega en 1 hora</h3>
-                <p>Hola <strong>${reserva.datos.nombre}</strong>, te recordamos tu recogida:</p>
-                <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:16px;margin:16px 0;">
-                  <p>🎫 <strong>Nº de reserva:</strong> ${numReserva(reserva.numero)}</p>
-                  ${reserva.conductorNombre ? `<p>🚖 <strong>Tu conductor:</strong> ${reserva.conductorNombre}</p>` : ''}
-                  <p>📅 <strong>Fecha:</strong> ${reserva.datos.fecha} a las ${reserva.datos.hora}</p>
-                  <p>📍 <strong>Origen:</strong> ${reserva.datos.origen}</p>
-                  <p>🏁 <strong>Destino:</strong> ${reserva.datos.destino}</p>
-                </div>
-                <p>📞 Consultas: <strong>828 810 938</strong></p>
-              </div>`
-            });
-          } catch (e) { console.error('Error recordatorio cliente:', e.message); }
-        }
-        reserva.recordatorioClienteEnviado = true;
-        await reserva.save();
-      }
-
-      // 3) Aviso al ADMIN si una reserva lleva 10 min PENDIENTE sin que nadie la acepte
-      const hace10min = new Date(Date.now() - 10 * 60 * 1000);
-      const sinAceptar = await Reserva.find({ estado: 'pendiente', avisoSinAceptarEnviado: false, fechaCreacion: { $lte: hace10min } });
-      for (const reserva of sinAceptar) {
-        bot.sendMessage(OWNER_CHAT_ID, `⚠️ Reserva sin aceptar — ${numReserva(reserva.numero)}\n\nLleva más de 10 minutos pendiente y ningún taxista la ha aceptado.\n\n${formatearReserva(reserva.datos, true)}\n\n🆔 ${reserva._id}`);
-        // A los 10 min ya no aplicamos prioridad: se envía a TODOS los conductores activos
-        // (incluido el prioritario) para que cualquiera pueda cogerla.
-        try {
-          const todos = await Conductor.find({ activo: true });
-          await enviarReservaA(reserva, todos);
-        } catch (e) {}
-        reserva.avisoSinAceptarEnviado = true;
-        await reserva.save();
-      }
-    } catch (err) { console.error('Error recordatorios:', err); }
-  }, 60 * 1000);
-}
-
-// =================== HELPERS ===================
-
-// Formatea el número corto de reserva: 42 -> RT-0042
-function numReserva(numero) {
-  if (!numero) return '';
-  return 'RT-' + String(numero).padStart(4, '0');
-}
-
-// Línea de municipio (cabecera): 🏙️ Municipio: TELDE  o  ✈️ AEROPUERTO
-function lineaMunicipio(data) {
-  if (!data.municipio) return '';
-  if (data.municipio === 'AEROPUERTO') return `✈️ Zona: AEROPUERTO\n`;
-  return `📍 Zona: ${data.municipio}\n`;
-}
-
-// nivel: 'disponible' (sin datos personales), 'taxista' (nombre sí, contacto no), 'admin' (todo)
-// Se mantiene compatibilidad: true => 'admin', false => 'taxista'
-// Texto plano (sin Markdown) para que ningún carácter de las direcciones corte el mensaje.
-function formatearReserva(data, nivel = 'taxista') {
-  if (nivel === true) nivel = 'admin';
-  if (nivel === false) nivel = 'taxista';
-
-  const linea = '━━━━━━━━━━━━━━━';
-  let msg = '';
-
-  if (nivel === 'disponible') {
-    // Estado PENDIENTE: solo zona, fecha, hora, destino y pasajeros.
-    // Se ocultan origen exacto, precio y datos del cliente hasta que un taxista acepta.
-    msg += lineaMunicipio(data);
-    msg += linea + '\n';
-    msg += `🗓️ ${data.fecha}\n`;
-    msg += `🕐 ${data.hora} h\n`;
-    msg += `🎯 Hacia: ${data.destino}\n`;
-    msg += `👥 ${data.pasajeros} pasajero(s)\n`;
-    return msg;
-  }
-
-  // Niveles 'taxista' y 'admin'
-  msg += lineaMunicipio(data);
-  msg += linea + '\n';
-  msg += `🗓️ ${data.fecha}  ·  🕐 ${data.hora} h\n`;
-  msg += `\n`;
-  msg += `🟢 Recogida:\n   ${data.origen}\n`;
-  msg += `🔴 Destino:\n   ${data.destino}\n`;
-  msg += `\n`;
-  msg += `👥 Pasajeros: ${data.pasajeros}\n`;
-  if (data.precioEstimado) msg += `💰 Tarifa estimada: ${data.precioEstimado} €\n`;
-  if (data.vuelo) msg += `✈️ Vuelo: ${data.vuelo}\n`;
-  if (data.pasaporte) msg += `🛂 Pasaporte: ${data.pasaporte}\n`;
-  if (data.observaciones) msg += `📝 Notas: ${data.observaciones}\n`;
-  msg += linea + '\n';
-
-  // Datos del cliente
-  msg += `\n👤 Cliente: ${data.nombre}\n`;
-  if (nivel === 'admin') {
-    // Solo el admin ve el contacto del cliente
-    msg += `📧 ${data.correo}\n`;
-    msg += `📞 ${data.telefono}\n`;
-  }
-  return msg;
-}
-
-// =================== RESERVAS ===================
-
-app.post('/reserva', async (req, res) => {
-  const { clienteChatId, ...data } = req.body;
-
-  if (!cumpleAntelacion(data.fecha, data.hora)) {
-    return res.json({
-      ok: false,
-      error: `No realizamos servicios inmediatos. Las reservas requieren un mínimo de ${horasATexto(cacheConfig.antelacion)} de antelación. Consultas: 828 810 938.`
-    });
-  }
-
-  let fechaServicio = null;
-  try { fechaServicio = new Date(`${data.fecha}T${data.hora}:00`); } catch (e) {}
-
-  // Detectar el municipio del origen (o AEROPUERTO)
-  try {
-    data.municipio = await detectarMunicipio(data.origen, data.origenCoords);
-  } catch (e) { data.municipio = null; }
-
-  try {
-    const conductores = await Conductor.find({ activo: true });
-    if (!conductores.length) {
-      await bot.sendMessage(OWNER_CHAT_ID, `🚖 NUEVA RESERVA (sin conductores)\n\n${formatearReserva(data, true)}`);
-      return res.json({ ok: true });
-    }
-
-    const numero = await siguienteNumeroReserva();
-    const reserva = await Reserva.create({ numero, datos: data, clienteChatId: clienteChatId || null, fechaServicio });
-
-    // Usar la función unificada: envía el audio de alarma + el mensaje a cada conductor
-    // y guarda los mensajes para poder actualizarlos todos al aceptar.
-    const numEnviados = await repartirReservaAConductores(reserva);
-
-    await bot.sendMessage(OWNER_CHAT_ID, `📨 Nueva reserva enviada a ${numEnviados} conductor(es)\n\n${formatearReserva(data, true)}`);
-    res.json({ ok: true, reservaId: reserva._id });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false });
-  }
-});
-
-// =================== CANCELACIÓN WEB POR EL CLIENTE ===================
-
-const BASE_URL = process.env.BASE_URL || '';
-
-// Página que ve el cliente al pulsar el enlace de cancelación
-app.get('/cancelar', async (req, res) => {
-  const id = req.query.id;
-  const html = (titulo, mensaje, color) => `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Cancelar reserva</title>
-    <style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#0a0a0a;color:#f0f0f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px}
-    .box{max-width:440px;background:#141414;border:1px solid ${color};border-radius:16px;padding:32px;text-align:center}
-    .icon{font-size:54px;margin-bottom:16px}h1{color:${color};font-size:22px;margin:0 0 12px}p{color:#bbb;font-size:15px;line-height:1.6;margin:0 0 20px}
-    .btn{display:inline-block;padding:14px 28px;background:#e05050;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;text-decoration:none}
-    .tel{color:#f5c400;text-decoration:none;font-weight:700}</style></head><body><div class="box">${titulo}${mensaje}</div></body></html>`;
-
-  try {
-    const reserva = await Reserva.findById(id);
-    if (!reserva) {
-      return res.send(html('<div class="icon">❓</div>', '<h1>Reserva no encontrada</h1><p>El enlace no es válido. Para cualquier consulta llama al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>', '#888'));
-    }
-    if (reserva.estado === 'cancelada') {
-      return res.send(html('<div class="icon">✅</div>', '<h1>Ya estaba cancelada</h1><p>Esta reserva ya figura como cancelada. No tienes que hacer nada más.</p>', '#7dd87d'));
-    }
-    // No permitir cancelar online con menos del margen de cancelación configurado
-    if (reserva.fechaServicio) {
-      const minutos = (new Date(reserva.fechaServicio) - ahoraCanarias()) / 60000;
-      if (minutos < cacheConfig.cancelacion * 60) {
-        return res.send(html('<div class="icon">⏱️</div>', `<h1>No se puede cancelar online</h1><p>Tu servicio es en menos de ${horasATexto(cacheConfig.cancelacion)}. Para cancelarlo, llama directamente al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>`, '#f5c400'));
-      }
-    }
-    const d = reserva.datos;
-    // Mostrar pantalla de confirmación con un botón que llama a /cancelar-confirmar
-    return res.send(html('<div class="icon">⚠️</div>', `<h1>¿Cancelar tu reserva?</h1>
-      <p>📅 ${d.fecha} a las ${d.hora}<br>📍 ${d.origen} → ${d.destino}</p>
-      <a class="btn" href="/cancelar-confirmar?id=${id}">Sí, cancelar reserva</a>`, '#f5c400'));
-  } catch (e) {
-    return res.send(html('<div class="icon">❓</div>', '<h1>Enlace no válido</h1><p>Para cualquier consulta llama al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>', '#888'));
-  }
-});
-
-// Confirmación real de la cancelación (cuando el cliente pulsa el botón)
-app.get('/cancelar-confirmar', async (req, res) => {
-  const id = req.query.id;
-  const html = (titulo, mensaje, color) => `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Cancelar reserva</title>
-    <style>body{font-family:'Segoe UI',system-ui,sans-serif;background:#0a0a0a;color:#f0f0f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px}
-    .box{max-width:440px;background:#141414;border:1px solid ${color};border-radius:16px;padding:32px;text-align:center}
-    .icon{font-size:54px;margin-bottom:16px}h1{color:${color};font-size:22px;margin:0 0 12px}p{color:#bbb;font-size:15px;line-height:1.6;margin:0}
-    .tel{color:#f5c400;text-decoration:none;font-weight:700}</style></head><body><div class="box">${titulo}${mensaje}</div></body></html>`;
-
-  try {
-    const reserva = await Reserva.findById(id);
-    if (!reserva) return res.send(html('<div class="icon">❓</div>', '<h1>Reserva no encontrada</h1><p>El enlace no es válido.</p>', '#888'));
-    if (reserva.estado === 'cancelada') return res.send(html('<div class="icon">✅</div>', '<h1>Ya estaba cancelada</h1><p>No tienes que hacer nada más.</p>', '#7dd87d'));
-    if (reserva.fechaServicio) {
-      const minutos = (new Date(reserva.fechaServicio) - ahoraCanarias()) / 60000;
-      if (minutos < cacheConfig.cancelacion * 60) {
-        return res.send(html('<div class="icon">⏱️</div>', `<h1>No se puede cancelar online</h1><p>Tu servicio es en menos de ${horasATexto(cacheConfig.cancelacion)}. Llama al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>`, '#f5c400'));
-      }
-    }
-    reserva.estado = 'cancelada';
-    await reserva.save();
-    await borrarEventoCalendario(reserva.eventoCalendarioId);
-    // Anular comisión del conductor
-    const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
-    // Avisar al admin
-    bot.sendMessage(OWNER_CHAT_ID, `❌ Cancelada por el cliente (web)\n\n${formatearReserva(reserva.datos, true)}${comisionesBorradas.deletedCount > 0 ? '\n💰 Comisión anulada al conductor.' : ''}`);
-    // Avisar al conductor asignado
-    if (reserva.conductorAsignado) {
-      try { bot.sendMessage(reserva.conductorAsignado, `❌ *Servicio cancelado por el cliente*\n\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}${comisionesBorradas.deletedCount > 0 ? '\n\n💰 La comisión de este servicio ha sido anulada.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
-    }
-    return res.send(html('<div class="icon">✅</div>', '<h1>Reserva cancelada</h1><p>Tu reserva ha sido cancelada correctamente. Esperamos verte pronto.</p>', '#7dd87d'));
-  } catch (e) {
-    console.error(e);
-    return res.send(html('<div class="icon">❓</div>', '<h1>Enlace no válido</h1><p>Para cualquier consulta llama al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>', '#888'));
-  }
-});
-
-// =================== VINCULAR TELEGRAM CON APP WEB ===================
-bot.onText(/\/vincular (.+)/, async (msg, match) => {
-  const chatId = String(msg.chat.id);
-  const email = (match[1] || '').trim().toLowerCase();
-  if (!email || !email.includes('@')) {
-    return bot.sendMessage(chatId, '❌ Formato incorrecto. Usa:\n/vincular tu@email.com');
-  }
-  try {
-    // Buscar conductor por email con chatId web
-    const conductor = await Conductor.findOne({ email: new RegExp('^' + email + '$', 'i') });
-    if (!conductor) {
-      return bot.sendMessage(chatId, `❌ No encontré ninguna cuenta con el email *${email}*.
-
-Asegúrate de usar el mismo email con el que te registraste en la app.`, { parse_mode: 'Markdown' });
-    }
-    if (!conductor.aprobado) {
-      return bot.sendMessage(chatId, `⏳ Tu cuenta aún no ha sido aprobada por el administrador.`);
-    }
-    // Verificar que no esté ya vinculado con otro chatId de Telegram
-    if (conductor.chatId && !conductor.chatId.startsWith('web_') && conductor.chatId !== chatId) {
-      return bot.sendMessage(chatId, `⚠️ Esta cuenta ya está vinculada a otro Telegram.`);
-    }
-    // Vincular
-    const chatIdAnterior = conductor.chatId;
-    conductor.chatId = chatId;
-    await conductor.save();
-    bot.sendMessage(chatId, `✅ *¡Vinculado correctamente!*
-
-Hola ${conductor.nombre}, ya recibirás las reservas tanto por Telegram como por la app web.
-
-💡 Escribe /start para ver tus opciones.`, { parse_mode: 'Markdown' });
-    // Avisar al admin
-    bot.sendMessage(OWNER_CHAT_ID, `🔗 *${conductor.nombre}* ha vinculado su cuenta web con Telegram.
-📧 ${conductor.email}`, { parse_mode: 'Markdown' });
-  } catch (e) {
-    console.error('Error vinculando:', e.message);
-    bot.sendMessage(chatId, `❌ Error al vincular. Inténtalo de nuevo.`);
-  }
-});
-
-app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
-
-// =================== APP CONDUCTORES (PWA) ===================
-
-const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const webpush = require('web-push');
-
-// Configurar VAPID para notificaciones push
-const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || '';
-const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || '';
-if (VAPID_PUBLIC && VAPID_PRIVATE) {
-  webpush.setVapidDetails('mailto:reservas@taxilaspalmasdegrancanaria.com', VAPID_PUBLIC, VAPID_PRIVATE);
-}
-
-async function enviarPushAConductores(conductores, titulo, cuerpo) {
-  if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
-  for (const c of conductores) {
-    if (!c.pushSubscription) continue;
-    try {
-      const sub = JSON.parse(c.pushSubscription);
-      await webpush.sendNotification(sub, JSON.stringify({ title: titulo, body: cuerpo }));
-    } catch (e) {
-      if (e.statusCode === 410) {
-        await Conductor.findByIdAndUpdate(c._id, { pushSubscription: null });
-      }
-    }
-  }
-}
-const JWT_SECRET = process.env.JWT_SECRET || 'taxi_lpa_secret_2026';
-
-// Middleware: verificar JWT
 function authConductor(req, res, next) {
-  const auth = req.headers.authorization || '';
-  const token = auth.replace('Bearer ', '');
+  const token = (req.headers.authorization || '').replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'No autorizado' });
   try {
     req.conductor = jwt.verify(token, JWT_SECRET);
     next();
-  } catch (e) {
-    return res.status(401).json({ error: 'Token inválido' });
-  }
+  } catch(e) { res.status(401).json({ error: 'Token inválido' }); }
 }
 
-// Enviar código de verificación por email
-async function enviarCodigoVerificacion(email, nombre, codigo) {
-  if (!BREVO_API_KEY) return;
-  await enviarEmailBrevo({
-    sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
-    to: [{ email, name: nombre }],
-    subject: 'Código de verificación — App Conductores',
-    htmlContent: `
-      <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px">
-        <h2 style="color:#f5c400;margin:0 0 16px">🚖 Reserva Taxi Las Palmas</h2>
-        <p>Hola <strong>${nombre}</strong>, tu código de verificación es:</p>
-        <div style="font-size:42px;font-weight:bold;color:#f5c400;text-align:center;letter-spacing:12px;margin:24px 0">${codigo}</div>
-        <p style="color:#aaa;font-size:13px">Este código expira en 10 minutos. Si no solicitaste este código, ignora este email.</p>
-      </div>`
-  });
-}
+const noCache = (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+};
+app.get('/', noCache, (req, res) => res.sendFile(path.join(__dirname, 'public', 'reservar.html')));
+app.get('/reservar', noCache, (req, res) => res.sendFile(path.join(__dirname, 'public', 'reservar.html')));
+app.get('/admin', noCache, (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+app.get('/conductores', noCache, (req, res) => res.sendFile(path.join(__dirname, 'public', 'conductores.html')));
+app.get('/seguimiento', noCache, (req, res) => res.sendFile(path.join(__dirname, 'public', 'seguimiento.html')));
 
-// Registro de conductor desde la app web
-app.post('/api/conductores/registro', async (req, res) => {
-  try {
-    const { nombre, telefono, email, password, licencia, plaza } = req.body;
-    if (!nombre || !telefono || !email || !password || !licencia || !plaza)
-      return res.status(400).json({ error: 'Todos los campos son obligatorios' });
-
-    const existe = await Conductor.findOne({ $or: [{ email }, { licencia }] });
-    if (existe) return res.status(400).json({ error: 'Ya existe un conductor con ese email o licencia' });
-
-    const hash = await bcrypt.hash(password, 10);
-    const chatId = 'web_' + Date.now();
-    const conductor = new Conductor({ chatId, nombre, telefono, email, password: hash, licencia, plaza, aprobado: false });
-    await conductor.save();
-
-    // Avisar al admin por Telegram
-    bot.sendMessage(OWNER_CHAT_ID,
-      `🆕 *Nuevo conductor registrado (app web)*\n\n👤 ${nombre}\n📱 ${telefono}\n✉️ ${email}\n🪪 Licencia: ${licencia}\n🚗 Plaza: ${plaza}\n\nID: ${conductor._id}`,
-      {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [[
-            { text: '✅ Aprobar', callback_data: `aprobar_web_${conductor._id}` },
-            { text: '❌ Rechazar', callback_data: `rechazar_web_${conductor._id}` }
-          ]]
-        }
-      }
-    );
-
-    res.json({ ok: true, mensaje: 'Registro enviado. Recibirás un email cuando seas aprobado.' });
-  } catch (e) {
-    console.error('Error registro conductor web:', e.message);
-    res.status(500).json({ error: 'Error interno' });
-  }
+app.get('/api/push/vapid-public-key', (req, res) => {
+  res.json({ publicKey: VAPID_PUBLIC_KEY, disponible: pushDisponible });
 });
 
-// Solicitar código de verificación para login
+app.post('/api/admin/push/suscribir', authAdmin, async (req, res) => {
+  try {
+    const { subscription } = req.body;
+    if (!subscription || !subscription.endpoint) return res.status(400).json({ error: 'Suscripción inválida' });
+    await PushSub.findOneAndUpdate(
+      { endpoint: subscription.endpoint },
+      { destinatario: 'admin', endpoint: subscription.endpoint, keys: subscription.keys },
+      { upsert: true }
+    );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/conductores/push/suscribir', authConductor, async (req, res) => {
+  try {
+    const { subscription } = req.body;
+    if (!subscription || !subscription.endpoint) return res.status(400).json({ error: 'Suscripción inválida' });
+    await PushSub.findOneAndUpdate(
+      { endpoint: subscription.endpoint },
+      { destinatario: req.conductor.id, endpoint: subscription.endpoint, keys: subscription.keys },
+      { upsert: true }
+    );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/push/desuscribir', async (req, res) => {
+  try {
+    const { endpoint } = req.body;
+    if (endpoint) await PushSub.deleteOne({ endpoint });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.get('/config-publica', (req, res) => {
+  res.json({ antelacionHoras: cacheConfig.antelacion, antelacionTexto: horasATexto(cacheConfig.antelacion), telefono: '828 810 938' });
+});
+
+async function calcularPrecioConTarifas(distanciaKm, fecha, hora, esAeropuerto, sillas, vehiculoId) {
+  const tarifas = await Tarifa.find();
+  const T = {};
+  tarifas.forEach(t => T[t.nombre] = t.valor);
+
+  const fechaDate = new Date(`${fecha}T${hora}:00`);
+  const horaNum = parseInt(hora.split(':')[0]) * 100 + parseInt(hora.split(':')[1]);
+  const diaSemana = fechaDate.getDay();
+  const esNoche = horaNum >= 2200 || horaNum < 600;
+  const esDomingo = diaSemana === 0;
+
+  const festivoDoc = await Festivo.findOne({ fecha });
+  const esFestivo = !!festivoDoc && festivoDoc.tipo !== 'sin_servicio';
+  const esFestivoPlus = festivoDoc?.tipo === 'festivo_plus';
+  const suplementoPlus = esFestivoPlus ? (festivoDoc.suplementoPlus || 0) : 0;
+
+  let tipo = 'diurna';
+  if (esNoche || esDomingo || esFestivo) tipo = 'nocturna';
+  if (esFestivoPlus) tipo = 'festivo_plus';
+
+  const bajada = tipo === 'diurna' ? T.diurna_bajada : T.nocturna_bajada;
+  const precioKm = tipo === 'diurna' ? T.diurna_km : T.nocturna_km;
+  const suplementoAeropuerto = esAeropuerto ? (tipo === 'diurna' ? T.diurna_aeropuerto : T.nocturna_aeropuerto) : 0;
+
+  let suplementoSillas = 0;
+  const sillaMap = { 'Grupo 0': T.silla_grupo0, 'Grupo 1': T.silla_grupo1, 'Grupo 2': T.silla_grupo2, 'Grupo 3': T.silla_grupo3, 'Alzador': T.silla_alzador };
+  if (sillas && Array.isArray(sillas)) {
+    sillas.forEach(s => {
+      const key = Object.keys(sillaMap).find(k => s.includes(k));
+      if (key) suplementoSillas += sillaMap[key] || 0;
+    });
+  }
+
+  let suplementoVehiculo = 0;
+  let nombreVehiculo = '';
+  if (vehiculoId) {
+    try {
+      const veh = await Vehiculo.findById(vehiculoId);
+      if (veh) { suplementoVehiculo = veh.suplemento || 0; nombreVehiculo = veh.nombre; }
+    } catch(e) {}
+  }
+
+  const subtotal = bajada + (distanciaKm * precioKm) + suplementoAeropuerto + suplementoSillas + suplementoPlus + suplementoVehiculo;
+  const precioBruto = Math.max(subtotal, bajada);
+  const precio = (Math.round(precioBruto / 0.05) * 0.05).toFixed(2);
+  return { precio, tipo, bajada, precioKm, suplementoAeropuerto, suplementoSillas, suplementoPlus, suplementoVehiculo, nombreVehiculo };
+}
+
+app.post('/calcular-tarifa', async (req, res) => {
+  try {
+    const { fecha, hora, origenCoords, destinoCoords, sillas, vehiculoId, esAdmin } = req.body;
+    if (!origenCoords || !destinoCoords || !GOOGLE_MAPS_KEY)
+      return res.json({ ok: false, error: 'Faltan coordenadas o clave Maps' });
+
+    if (!esAdmin) {
+      const bloqueo = await comprobarDiaBloqueado(fecha, hora);
+      if (bloqueo) return res.json({ ok: false, error: bloqueo });
+    }
+
+    // Obtener distancia de Google Maps
+    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origenCoords}&destinations=${destinoCoords}&mode=driving&key=${GOOGLE_MAPS_KEY}`;
+    const mapsRes = await new Promise((resolve, reject) => {
+      https.get(url, (r) => {
+        let d = ''; r.on('data', c => d += c); r.on('end', () => resolve(JSON.parse(d)));
+      }).on('error', reject);
+    });
+    const elem = mapsRes.rows?.[0]?.elements?.[0];
+    if (!elem || elem.status !== 'OK') return res.json({ ok: false, error: 'No se pudo calcular la ruta' });
+    const distanciaKm = Math.max(0, (elem.distance.value / 1000) - 1.5); // Restar 1.5 km al total
+
+    const DISTANCIA_MINIMA_KM = 10;
+    if (!esAdmin && distanciaKm < DISTANCIA_MINIMA_KM) {
+      return res.json({ ok: false, error: 'El servicio que usted intenta solicitar pertenece al servicio de taxi urbano de su municipio. Nuestra compañía es un servicio de taxi interurbano.', distanciaKm: parseFloat(distanciaKm.toFixed(1)) });
+    }
+
+    const { precio, tipo, bajada, precioKm, suplementoAeropuerto, suplementoSillas, suplementoPlus, suplementoVehiculo, nombreVehiculo } = await calcularPrecioConTarifas(distanciaKm, fecha, hora, req.body.esAeropuerto, sillas, vehiculoId);
+
+    res.json({
+      ok: true,
+      precio: parseFloat(precio),
+      distanciaKm: distanciaKm.toFixed(1),
+      tipo,
+      bajada,
+      precioKm,
+      suplementoAeropuerto,
+      suplementoSillas,
+      suplementoPlus,
+      suplementoVehiculo,
+      vehiculoNombre: nombreVehiculo,
+      desglose: {
+        bajada,
+        km: `${distanciaKm.toFixed(1)} km × ${precioKm}€ = ${(distanciaKm * precioKm).toFixed(2)}€`,
+        aeropuerto: suplementoAeropuerto,
+        sillas: suplementoSillas,
+        plus: suplementoPlus,
+        vehiculo: suplementoVehiculo
+      }
+    });
+  } catch(e) { console.error('Error calcular-tarifa:', e.message); res.status(500).json({ ok: false }); }
+});
+
+
+app.post('/api/admin/login', (req, res) => {
+  if (req.body.password !== ADMIN_PASSWORD) return res.status(401).json({ error: 'Contraseña incorrecta' });
+  const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '7d' });
+  res.json({ ok: true, token });
+});
+
+// =================== RESERVA PÚBLICA ===================
+app.post('/reserva', async (req, res) => {
+  try {
+    const data = req.body;
+    if (!cumpleAntelacion(data.fecha, data.hora))
+      return res.json({ ok: false, error: `Mínimo ${horasATexto(cacheConfig.antelacion)} de antelación. Consultas: 828 810 938.` });
+    const bloqueo = await comprobarDiaBloqueado(data.fecha, data.hora);
+    if (bloqueo) return res.json({ ok: false, error: bloqueo });
+    let fechaServicio = null;
+    try { fechaServicio = new Date(`${data.fecha}T${data.hora}:00`); } catch(e) {}
+    try { data.municipio = await detectarMunicipio(data.origen, data.origenCoords); } catch(e) {}
+    const numero = await siguienteNumeroReserva();
+    const reserva = await Reserva.create({ numero, datos: data, fechaServicio });
+    notificarAdmin({ tipo: 'nueva_reserva', numero: numReserva(numero), fecha: data.fecha, hora: data.hora, origen: data.origen, destino: data.destino, pasajeros: data.pasajeros, precio: data.precioEstimado, cliente: data.nombre });
+    notificarConductores({ tipo: 'nueva_reserva', numero: numReserva(numero), fecha: data.fecha, hora: data.hora, destino: data.destino, pasajeros: data.pasajeros, precio: data.precioEstimado });
+    enviarEmailCopiaNuevaReserva(data, numero).catch(()=>{});
+
+    let numeroVuelta = null, reservaVueltaId = null;
+    if (data.tipoTrayecto === 'idavuelta' && data.fechaVuelta && data.horaVuelta && data.origenVuelta && data.destinoVuelta) {
+      try {
+        const distanciaKmIda = parseFloat(data.distanciaKmIda) || null;
+        if (distanciaKmIda) {
+          const esAeropuertoVuelta = /aeropuerto|airport|lpa|gando/i.test(data.origenVuelta) || /aeropuerto|airport|lpa|gando/i.test(data.destinoVuelta);
+          const calc = await calcularPrecioConTarifas(distanciaKmIda, data.fechaVuelta, data.horaVuelta, esAeropuertoVuelta, data.sillas, data.vehiculoId);
+          const datosVuelta = {
+            ...data,
+            origen: data.origenVuelta, destino: data.destinoVuelta,
+            fecha: data.fechaVuelta, hora: data.horaVuelta,
+            vuelo: data.vueloVuelta || '', pasaporte: data.pasaporteVuelta || '',
+            precioEstimado: parseFloat(calc.precio), tarifaTipo: calc.tipo,
+            tipoTrayecto: 'idavuelta', esViajeDeVuelta: true, reservaIdaNumero: numero
+          };
+          let fechaServicioVuelta = null;
+          try { fechaServicioVuelta = new Date(`${data.fechaVuelta}T${data.horaVuelta}:00`); } catch(e) {}
+          numeroVuelta = await siguienteNumeroReserva();
+          const reservaVuelta = await Reserva.create({ numero: numeroVuelta, datos: datosVuelta, fechaServicio: fechaServicioVuelta });
+          reservaVueltaId = reservaVuelta._id;
+          notificarAdmin({ tipo: 'nueva_reserva', numero: numReserva(numeroVuelta), fecha: datosVuelta.fecha, hora: datosVuelta.hora, origen: datosVuelta.origen, destino: datosVuelta.destino, pasajeros: datosVuelta.pasajeros, precio: datosVuelta.precioEstimado, cliente: datosVuelta.nombre });
+          notificarConductores({ tipo: 'nueva_reserva', numero: numReserva(numeroVuelta), fecha: datosVuelta.fecha, hora: datosVuelta.hora, destino: datosVuelta.destino, pasajeros: datosVuelta.pasajeros, precio: datosVuelta.precioEstimado });
+          enviarEmailCopiaNuevaReserva(datosVuelta, numeroVuelta).catch(()=>{});
+        }
+      } catch(e) { console.error('Error creando reserva de vuelta:', e.message); }
+    }
+
+    res.json({ ok: true, reservaId: reserva._id, reservaVueltaId, numeroVuelta: numeroVuelta ? numReserva(numeroVuelta) : null });
+  } catch(e) { console.error('Error /reserva:', e.message); res.status(500).json({ ok: false, error: 'Error interno' }); }
+});
+
+// =================== ADMIN RESERVAS ===================
+app.post('/api/admin/nueva-reserva', authAdmin, async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data.nombre || !data.fecha || !data.hora || !data.origen || !data.destino || !data.pasajeros)
+      return res.status(400).json({ error: 'Faltan campos obligatorios' });
+    if (!cumpleAntelacion(data.fecha, data.hora))
+      return res.status(400).json({ error: `Mínimo ${horasATexto(cacheConfig.antelacion)} de antelación.` });
+    let fechaServicio = null;
+    try { fechaServicio = new Date(`${data.fecha}T${data.hora}:00`); } catch(e) {}
+    try { data.municipio = await detectarMunicipio(data.origen, null); } catch(e) {}
+    const numero = await siguienteNumeroReserva();
+    const reserva = await Reserva.create({ numero, datos: data, fechaServicio });
+    try { const eid = await crearEventoCalendario(reserva, null); if (eid) { reserva.eventoCalendarioId = eid; await reserva.save(); } } catch(e) {}
+    notificarAdmin({ tipo: 'nueva_reserva', numero: numReserva(numero), fecha: data.fecha, hora: data.hora, origen: data.origen, destino: data.destino, pasajeros: data.pasajeros, precio: data.precioEstimado || null, cliente: data.nombre });
+    notificarConductores({ tipo: 'nueva_reserva', numero: numReserva(numero), fecha: data.fecha, hora: data.hora, destino: data.destino, pasajeros: data.pasajeros, precio: data.precioEstimado || null });
+    enviarEmailCopiaNuevaReserva(data, numero).catch(()=>{});
+    res.json({ ok: true, numero: numReserva(numero), id: reserva._id });
+  } catch(e) { console.error('Error nueva-reserva:', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.get('/api/admin/reservas', authAdmin, async (req, res) => {
+  try {
+    const { estado } = req.query;
+    const filtro = estado && estado !== 'todas' ? { estado } : {};
+    const reservas = await Reserva.find(filtro).sort({ fechaCreacion: -1 }).limit(100);
+    res.json(reservas.map(r => ({
+      id: r._id.toString(), numero: numReserva(r.numero), estado: r.estado,
+      fecha: r.datos.fecha, hora: r.datos.hora, origen: r.datos.origen, destino: r.datos.destino,
+      pasajeros: r.datos.pasajeros, precio: r.datos.precioEstimado,
+      cliente: r.datos.nombre, telefono: r.datos.telefono, correo: r.datos.correo,
+      notas: r.datos.observaciones, vuelo: r.datos.vuelo, pasaporte: r.datos.pasaporte,
+      conductor: r.conductorNombre || null, fechaCreacion: r.fechaCreacion
+    })));
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/cancelar/:id', authAdmin, async (req, res) => {
+  try {
+    const reserva = await Reserva.findById(req.params.id);
+    if (!reserva) return res.status(404).json({ error: 'No encontrada' });
+    const motivo = req.body?.motivo || null;
+    const conductorAnterior = reserva.conductorAsignado;
+    reserva.estado = 'cancelada';
+    await reserva.save();
+    await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
+    await borrarEventoCalendario(reserva.eventoCalendarioId);
+    notificarAdmin({ tipo: 'reserva_cancelada', numero: numReserva(reserva.numero), fecha: reserva.datos.fecha, hora: reserva.datos.hora, motivo });
+    if (conductorAnterior) notificarConductores({ tipo: 'reserva_cancelada', numero: numReserva(reserva.numero), fecha: reserva.datos.fecha, hora: reserva.datos.hora, origen: reserva.datos.origen }, conductorAnterior);
+    try { await enviarEmailCancelacion(reserva.datos, reserva.numero, motivo); } catch(e) {}
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.delete('/api/admin/reservas/:id', authAdmin, async (req, res) => {
+  try {
+    const reserva = await Reserva.findById(req.params.id);
+    if (!reserva) return res.status(404).json({ error: 'No encontrada' });
+    const force = req.query.force === 'true';
+    if (!force && reserva.estado !== 'cancelada') return res.status(400).json({ error: 'Solo se pueden eliminar reservas canceladas o finalizadas' });
+    if (force && !['cancelada','completada'].includes(reserva.estado)) return res.status(400).json({ error: 'Solo se pueden eliminar reservas canceladas o finalizadas' });
+    if (reserva.eventoCalendarioId) await borrarEventoCalendario(reserva.eventoCalendarioId);
+    // Solo borrar comisiones si la reserva es cancelada (nunca se realizó).
+    // Si está completada, la comisión se mantiene para el registro contable.
+    if (reserva.estado === 'cancelada') await Comision.deleteMany({ reservaId: reserva._id });
+    await Reserva.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch(e) { console.error('Error eliminar reserva:', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/reasignar/:id', authAdmin, async (req, res) => {
+  try {
+    const reserva = await Reserva.findById(req.params.id);
+    if (!reserva) return res.status(404).json({ error: 'No encontrada' });
+    const conductorAnterior = reserva.conductorAsignado;
+    await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
+    await borrarEventoCalendario(reserva.eventoCalendarioId);
+    reserva.estado = 'pendiente';
+    reserva.conductorAsignado = null;
+    reserva.conductorNombre = null;
+    reserva.eventoCalendarioId = null;
+    await reserva.save();
+    notificarAdmin({ tipo: 'reserva_reasignada', numero: numReserva(reserva.numero), fecha: reserva.datos.fecha, hora: reserva.datos.hora });
+    if (conductorAnterior) notificarConductores({ tipo: 'reserva_reasignada', numero: numReserva(reserva.numero), fecha: reserva.datos.fecha, hora: reserva.datos.hora, origen: reserva.datos.origen }, conductorAnterior);
+    notificarConductores({ tipo: 'nueva_reserva', numero: numReserva(reserva.numero), fecha: reserva.datos.fecha, hora: reserva.datos.hora, destino: reserva.datos.destino, pasajeros: reserva.datos.pasajeros });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/asignar-conductor/:id', authAdmin, async (req, res) => {
+  try {
+    const { conductorId } = req.body;
+    const reserva = await Reserva.findById(req.params.id);
+    if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
+    const conductor = await Conductor.findById(conductorId);
+    if (!conductor) return res.status(404).json({ error: 'Conductor no encontrado' });
+    const conductorAnterior = reserva.conductorAsignado;
+    await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
+    await borrarEventoCalendario(reserva.eventoCalendarioId);
+    reserva.estado = 'asignada';
+    reserva.conductorAsignado = conductor._id.toString();
+    reserva.conductorNombre = conductor.nombre;
+    reserva.eventoCalendarioId = null;
+    await reserva.save();
+    const esPrioritario = esLicenciaPrioritaria(conductor.licencia);
+    if (!esPrioritario && reserva.datos.precioEstimado) {
+      const precio = parseFloat(reserva.datos.precioEstimado);
+      const pct = conductor.comisionPorcentaje || COMISION_PORCENTAJE;
+      await new Comision({ conductorId: conductor._id.toString(), conductorNombre: conductor.nombre, reservaId: reserva._id, precioCarrera: precio, comision: parseFloat((precio * pct / 100).toFixed(2)), mes: new Date().toISOString().slice(0, 7) }).save();
+    }
+    try { const eid = await crearEventoCalendario(reserva, conductor.nombre); if (eid) { reserva.eventoCalendarioId = eid; await reserva.save(); } } catch(e) {}
+    notificarAdmin({ tipo: 'reserva_aceptada', numero: numReserva(reserva.numero), conductor: conductor.nombre, fecha: reserva.datos.fecha, hora: reserva.datos.hora, origen: reserva.datos.origen, destino: reserva.datos.destino });
+    notificarConductores({ tipo: 'reserva_asignada', numero: numReserva(reserva.numero), fecha: reserva.datos.fecha, hora: reserva.datos.hora, origen: reserva.datos.origen, destino: reserva.datos.destino, pasajeros: reserva.datos.pasajeros, precio: reserva.datos.precioEstimado }, conductor._id.toString());
+    // También enviar como servicio_asignado para compatibilidad con APK conductor
+    notificarConductores({ tipo: 'servicio_asignado', numero: numReserva(reserva.numero), fecha: reserva.datos.fecha, hora: reserva.datos.hora, origen: reserva.datos.origen, destino: reserva.datos.destino, pasajeros: reserva.datos.pasajeros, precio: reserva.datos.precioEstimado }, conductor._id.toString());
+    if (conductorAnterior && conductorAnterior !== conductor._id.toString()) {
+      // Reasignación: avisar al conductor anterior y NO volver a mandar email al cliente
+      notificarConductores({ tipo: 'reserva_reasignada', numero: numReserva(reserva.numero), fecha: reserva.datos.fecha, hora: reserva.datos.hora }, conductorAnterior);
+      const condAnteriorDoc = await Conductor.findById(conductorAnterior).catch(()=>null);
+      if (condAnteriorDoc?.email && BREVO_API_KEY) {
+        enviarEmailBrevo({
+          sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
+          to: [{ email: condAnteriorDoc.email, name: condAnteriorDoc.nombre }],
+          subject: `🔄 Servicio reasignado — ${numReserva(reserva.numero)}`,
+          htmlContent: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f9f9f9;max-width:600px;margin:0 auto;"><h2 style="color:#1a1a1a;background:#eee;padding:16px;border-radius:8px;">🔄 Servicio reasignado</h2><p>Hola <strong>${condAnteriorDoc.nombre}</strong>, el servicio <strong>${numReserva(reserva.numero)}</strong> (${reserva.datos.fecha} ${reserva.datos.hora}) ha sido reasignado a otro conductor por el administrador.</p><p>📞 Consultas: <strong>828 810 938</strong></p></div>`
+        }).catch(()=>{});
+      }
+    } else if (!conductorAnterior) {
+      // Primera asignación: enviar email al cliente
+      try { await enviarEmailConfirmacion(reserva.datos, reserva._id, conductor.nombre, reserva.numero); } catch(e) {}
+    }
+    enviarEmailConductorServicioAsignado(conductor, reserva).catch(()=>{});
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// =================== ADMIN CONDUCTORES ===================
+app.get('/api/admin/conductores', authAdmin, async (req, res) => {
+  try {
+    const conductores = await Conductor.find().sort({ fechaRegistro: -1 }).select('-password -codigoVerificacion -codigoExpira');
+    res.json(conductores.map(c => ({ id: c._id.toString(), nombre: c.nombre, licencia: c.licencia, plaza: c.plaza, telefono: c.telefono, email: c.email, matricula: c.matricula, matriculaEU: c.matriculaEU, aprobado: c.aprobado, activo: c.activo, fechaRegistro: c.fechaRegistro })));
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/conductores/:id/aprobar', authAdmin, async (req, res) => {
+  try {
+    const c = await Conductor.findByIdAndUpdate(req.params.id, { aprobado: true, activo: true }, { new: true });
+    if (!c) return res.status(404).json({ error: 'No encontrado' });
+    try { await enviarEmailBrevo({ sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' }, to: [{ email: c.email, name: c.nombre }], subject: '✅ Tu cuenta ha sido aprobada', htmlContent: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px"><h2 style="color:#f5c400">🚖 ¡Bienvenido, ${c.nombre}!</h2><p>Tu cuenta ha sido aprobada. Ya puedes entrar en la app de conductores.</p></div>` }); } catch(e) {}
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/conductores/:id/denegar', authAdmin, async (req, res) => {
+  try {
+    const c = await Conductor.findByIdAndDelete(req.params.id);
+    if (!c) return res.status(404).json({ error: 'No encontrado' });
+    try { await enviarEmailBrevo({ sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' }, to: [{ email: c.email, name: c.nombre }], subject: 'Solicitud no aprobada', htmlContent: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px"><h2 style="color:#f5c400">Reserva Taxi Las Palmas</h2><p>Hola ${c.nombre}, tu solicitud de registro no ha sido aprobada.</p></div>` }); } catch(e) {}
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/conductores/:id/toggle-activo', authAdmin, async (req, res) => {
+  try {
+    const c = await Conductor.findById(req.params.id);
+    if (!c) return res.status(404).json({ error: 'No encontrado' });
+    c.activo = !c.activo;
+    await c.save();
+    res.json({ ok: true, activo: c.activo });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/conductores/:id/penalizar', authAdmin, async (req, res) => {
+  try {
+    const { minutos } = req.body;
+    const c = await Conductor.findById(req.params.id);
+    if (!c) return res.status(404).json({ error: 'No encontrado' });
+    c.activo = false;
+    await c.save();
+    if (minutos && minutos > 0) {
+      setTimeout(async () => { try { await Conductor.findByIdAndUpdate(req.params.id, { activo: true }); } catch(e) {} }, minutos * 60000);
+    }
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.delete('/api/admin/conductores/:id', authAdmin, async (req, res) => {
+  try {
+    await Conductor.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// =================== ADMIN COMISIONES ===================
+app.get('/api/admin/comisiones', authAdmin, async (req, res) => {
+  try {
+    const comisiones = await Comision.find({ pagada: false }).sort({ fechaCreacion: -1 });
+    const porConductor = {};
+    for (const c of comisiones) {
+      if (!porConductor[c.conductorId]) porConductor[c.conductorId] = { id: c.conductorId, nombre: c.conductorNombre, total: 0, servicios: 0 };
+      porConductor[c.conductorId].total += c.comision;
+      porConductor[c.conductorId].servicios++;
+    }
+    res.json(Object.values(porConductor).map(c => ({ ...c, total: parseFloat(c.total.toFixed(2)) })));
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/comisiones/pagar/:conductorId', authAdmin, async (req, res) => {
+  try {
+    await Comision.updateMany({ conductorId: req.params.conductorId, pagada: false }, { pagada: true, fechaPago: new Date() });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.get('/api/admin/comisiones/pagadas', authAdmin, async (req, res) => {
+  try {
+    const comisiones = await Comision.find({ pagada: true }).sort({ fechaPago: -1 });
+    // Agrupar por conductor y mes
+    const porConductorMes = {};
+    for (const c of comisiones) {
+      const mes = c.mes || (c.fechaCreacion ? c.fechaCreacion.toISOString().slice(0,7) : 'sin-mes');
+      const key = c.conductorId + '|' + mes;
+      if (!porConductorMes[key]) porConductorMes[key] = { id: c.conductorId, nombre: c.conductorNombre, mes, total: 0, servicios: 0, fechaPago: c.fechaPago };
+      porConductorMes[key].total += c.comision;
+      porConductorMes[key].servicios++;
+    }
+    res.json(Object.values(porConductorMes).map(c => ({ ...c, total: parseFloat(c.total.toFixed(2)) })));
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// =================== ADMIN STATS ===================
+app.get('/api/admin/stats', authAdmin, async (req, res) => {
+  try {
+    const [pendientes, asignadas, conductoresActivos, solicitudes, comData] = await Promise.all([
+      Reserva.countDocuments({ estado: 'pendiente' }),
+      Reserva.countDocuments({ estado: 'asignada' }),
+      Conductor.countDocuments({ activo: true, aprobado: true }),
+      Conductor.countDocuments({ aprobado: false }),
+      Comision.aggregate([{ $match: { pagada: false } }, { $group: { _id: null, total: { $sum: '$comision' } } }])
+    ]);
+    res.json({ pendientes, asignadas, conductoresActivos, solicitudes, comisionesPendientes: comData[0] ? parseFloat(comData[0].total.toFixed(2)) : 0 });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// (Rutas /api/admin/festivos completas más abajo, con validación de tipo y upsert)
+
+// =================== CONDUCTORES APP ===================
+app.post('/api/conductores/registro', async (req, res) => {
+  try {
+    const { nombre, telefono, email, password, licencia, plaza, matricula, matriculaEU } = req.body;
+    if (!nombre || !telefono || !email || !password || !licencia || !plaza)
+      return res.status(400).json({ error: 'Todos los campos son obligatorios' });
+    const existe = await Conductor.findOne({ $or: [{ email }, { licencia }] });
+    if (existe) return res.status(400).json({ error: 'Ya existe un conductor con ese email o licencia' });
+    const hash = await bcrypt.hash(password, 10);
+    const chatId = 'web_' + Date.now();
+    await new Conductor({ chatId, nombre, telefono, email, password: hash, licencia, plaza, matricula, matriculaEU, aprobado: false }).save();
+    notificarAdmin({ tipo: 'nueva_solicitud', nombre, licencia, plaza });
+    res.json({ ok: true });
+  } catch(e) { console.error('Error registro:', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
 app.post('/api/conductores/solicitar-codigo', async (req, res) => {
   try {
     const { email, password } = req.body;
     const conductor = await Conductor.findOne({ email });
     if (!conductor) return res.status(400).json({ error: 'Email o contraseña incorrectos' });
     if (!conductor.aprobado) return res.status(403).json({ error: 'Tu cuenta aún no ha sido aprobada' });
-
+    if (!conductor.activo) return res.status(403).json({ error: 'Tu cuenta está desactivada. Contacta al administrador.' });
     const ok = await bcrypt.compare(password, conductor.password);
     if (!ok) return res.status(400).json({ error: 'Email o contraseña incorrectos' });
-
     const codigo = String(Math.floor(100000 + Math.random() * 900000));
     conductor.codigoVerificacion = codigo;
     conductor.codigoExpira = new Date(Date.now() + 30 * 60 * 1000);
     await conductor.save();
-
     await enviarCodigoVerificacion(email, conductor.nombre, codigo);
     res.json({ ok: true });
-  } catch (e) {
-    console.error('Error solicitar codigo:', e.message);
-    res.status(500).json({ error: 'Error interno' });
-  }
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
 
-// Verificar código y devolver JWT
 app.post('/api/conductores/verificar-codigo', async (req, res) => {
   try {
     const { email, codigo } = req.body;
@@ -1871,552 +1042,566 @@ app.post('/api/conductores/verificar-codigo', async (req, res) => {
     if (!conductor) return res.status(400).json({ error: 'Conductor no encontrado' });
     if (conductor.codigoVerificacion !== codigo) return res.status(400).json({ error: 'Código incorrecto' });
     if (new Date() > conductor.codigoExpira) return res.status(400).json({ error: 'Código expirado' });
-
     conductor.codigoVerificacion = null;
     conductor.codigoExpira = null;
     await conductor.save();
-
-    const token = jwt.sign({ id: conductor._id, chatId: conductor.chatId, nombre: conductor.nombre }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ id: conductor._id.toString(), chatId: conductor.chatId, nombre: conductor.nombre }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ ok: true, token, nombre: conductor.nombre });
-  } catch (e) {
-    console.error('Error verificar codigo:', e.message);
-    res.status(500).json({ error: 'Error interno' });
-  }
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
 
-// Obtener servicios disponibles (pendientes) — respetando la prioridad
 app.get('/api/conductores/servicios', authConductor, async (req, res) => {
   try {
     const conductor = await Conductor.findById(req.conductor.id);
-    if (!conductor || !conductor.activo) return res.status(403).json({ error: 'Tu cuenta está desactivada. Contacta con el administrador.' });
-    const esPrioritario = String(conductor.licencia) === String(LICENCIA_PRIORITARIA);
+    if (!conductor || !conductor.activo) return res.status(403).json({ error: 'Cuenta desactivada. Contacta al administrador.' });
+    const esPrioritario = esLicenciaPrioritaria(conductor.licencia);
     const ahora = new Date();
-    const hace2min = new Date(ahora.getTime() - MINUTOS_PRIORIDAD * 60 * 1000);
-
-    // Si el conductor NO es prioritario, ocultarle las reservas creadas hace menos de 2 minutos
-    // (que aún están en la ventana exclusiva del prioritario)
-    const filtro = esPrioritario
-      ? { estado: 'pendiente' }
-      : { estado: 'pendiente', fechaCreacion: { $lte: hace2min } };
-
+    const haceXmin = new Date(ahora.getTime() - cacheConfig.prioridadMinutos * 60 * 1000);
+    const filtro = esPrioritario ? { estado: 'pendiente' } : { estado: 'pendiente', fechaCreacion: { $lte: haceXmin } };
     const reservas = await Reserva.find(filtro).sort({ fechaCreacion: -1 }).limit(20);
     res.json(reservas.map(r => ({
-      id: r._id,
-      numero: numReserva(r.numero),
-      fecha: r.datos.fecha,
-      hora: r.datos.hora,
-      origen: r.datos.origen,
-      destino: r.datos.destino,
-      pasajeros: r.datos.pasajeros,
-      precio: r.datos.precioEstimado,
-      notas: r.datos.observaciones
+      id: r._id, numero: numReserva(r.numero), fecha: r.datos.fecha, hora: r.datos.hora,
+      origen: r.datos.origen, destino: r.datos.destino, pasajeros: r.datos.pasajeros,
+      precio: r.datos.precioEstimado, notas: r.datos.observaciones,
+      vuelo: r.datos.vuelo, pasaporte: r.datos.pasaporte,
+      nombre: r.datos.nombre, sillas: r.datos.sillas, vehiculoNombre: r.datos.vehiculoNombre
     })));
-  } catch (e) {
-    res.status(500).json({ error: 'Error interno' });
-  }
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
 
-// Aceptar servicio desde la app web
 app.post('/api/conductores/aceptar/:id', authConductor, async (req, res) => {
   try {
     const reserva = await Reserva.findById(req.params.id);
     if (!reserva || reserva.estado !== 'pendiente') return res.status(400).json({ error: 'Esta reserva ya no está disponible' });
-
     const conductor = await Conductor.findById(req.conductor.id);
     if (!conductor) return res.status(404).json({ error: 'Conductor no encontrado' });
-
+    const esPrioritarioCheck = esLicenciaPrioritaria(conductor.licencia);
+    if (!esPrioritarioCheck) {
+      const minutosTranscurridos = (new Date() - reserva.fechaCreacion) / 60000;
+      if (minutosTranscurridos < cacheConfig.prioridadMinutos) {
+        return res.status(403).json({ error: `Esta reserva aún está en periodo de prioridad. Disponible en ${Math.ceil(cacheConfig.prioridadMinutos - minutosTranscurridos)} min.` });
+      }
+    }
     reserva.estado = 'asignada';
-    reserva.conductorAsignado = conductor.chatId;
+    reserva.conductorAsignado = conductor._id.toString();
     reserva.conductorNombre = conductor.nombre;
     await reserva.save();
-
-    // Crear evento en calendario
-    const eventoId = await crearEventoCalendario(reserva, conductor.nombre);
-    if (eventoId) { reserva.eventoCalendarioId = eventoId; await reserva.save(); }
-
-    // Registrar comisión
-    const esLicenciaPrioritaria = conductor.licencia === LICENCIA_PRIORITARIA;
-    if (!esLicenciaPrioritaria && reserva.datos.precioEstimado) {
-      const precio = parseFloat(reserva.datos.precioEstimado);
-      await new Comision({
-        conductorChatId: conductor.chatId,
-        conductorNombre: conductor.nombre,
-        reservaId: reserva._id,
-        precioCarrera: precio,
-        comision: parseFloat((precio * COMISION_PORCENTAJE / 100).toFixed(2)),
-        mes: new Date().toISOString().slice(0, 7)
-      }).save();
+    const esPrioritario = esLicenciaPrioritaria(conductor.licencia);
+    if (!esPrioritario && reserva.datos.precioEstimado) {
+      try {
+        const precio = parseFloat(reserva.datos.precioEstimado);
+        const pct = conductor.comisionPorcentaje || COMISION_PORCENTAJE;
+        await new Comision({ conductorId: conductor._id.toString(), conductorNombre: conductor.nombre, reservaId: reserva._id, precioCarrera: precio, comision: parseFloat((precio * pct / 100).toFixed(2)), mes: new Date().toISOString().slice(0, 7) }).save();
+      } catch(eComision) { console.error('Error creando comisión (la reserva sí quedó asignada):', eComision.message); }
     }
-
-    // Avisar al admin
-    bot.sendMessage(OWNER_CHAT_ID, `✅ *${conductor.nombre}* aceptó ${numReserva(reserva.numero)} desde la app web.\n\n${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
-
-    // Email al cliente
-    await enviarEmailConfirmacion(reserva.datos, reserva._id, conductor.nombre, reserva.numero);
-
+    try { const eid = await crearEventoCalendario(reserva, conductor.nombre); if (eid) { reserva.eventoCalendarioId = eid; await reserva.save(); } } catch(e) {}
+    notificarAdmin({ tipo: 'reserva_aceptada', numero: numReserva(reserva.numero), conductor: conductor.nombre, fecha: reserva.datos.fecha, hora: reserva.datos.hora, origen: reserva.datos.origen, destino: reserva.datos.destino });
+    try { await enviarEmailConfirmacion(reserva.datos, reserva._id, conductor.nombre, reserva.numero); } catch(e) {}
+    enviarEmailConductorServicioAsignado(conductor, reserva).catch(()=>{});
     res.json({ ok: true });
-  } catch (e) {
-    console.error('Error aceptar desde web:', e.message);
-    res.status(500).json({ error: 'Error interno' });
-  }
+  } catch(e) { console.error('Error aceptar:', e.message); res.status(500).json({ error: 'Error interno' }); }
 });
 
-// Mis servicios (los que tiene asignados el conductor)
 app.get('/api/conductores/mis-servicios', authConductor, async (req, res) => {
   try {
     const conductor = await Conductor.findById(req.conductor.id);
-    const reservas = await Reserva.find({ conductorAsignado: conductor.chatId, estado: { $in: ['asignada', 'completada'] } }).sort({ fechaServicio: -1 }).limit(30);
+    const reservas = await Reserva.find({ conductorAsignado: conductor._id.toString(), estado: { $in: ['asignada', 'en_camino', 'recogido', 'completada'] } }).sort({ fechaServicio: -1 }).limit(30);
     res.json(reservas.map(r => ({
-      id: r._id,
-      numero: numReserva(r.numero),
-      fecha: r.datos.fecha,
-      hora: r.datos.hora,
-      origen: r.datos.origen,
-      destino: r.datos.destino,
-      pasajeros: r.datos.pasajeros,
-      precio: r.datos.precioEstimado,
-      estado: r.estado
+      id: r._id, numero: numReserva(r.numero), fecha: r.datos.fecha, hora: r.datos.hora,
+      origen: r.datos.origen, destino: r.datos.destino, pasajeros: r.datos.pasajeros,
+      precio: r.datos.precioEstimado, estado: r.estado, notas: r.datos.observaciones,
+      vuelo: r.datos.vuelo, pasaporte: r.datos.pasaporte,
+      nombre: r.datos.nombre, sillas: r.datos.sillas, vehiculoNombre: r.datos.vehiculoNombre
     })));
-  } catch (e) {
-    res.status(500).json({ error: 'Error interno' });
-  }
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
 
-// Servir service worker, manifest y app de conductores
-app.get('/manifest.json', (req, res) => res.sendFile(path.join(__dirname, 'public', 'manifest.json')));
-app.get('/sw.js', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sw.js')));
-app.get('/conductores', (req, res) => res.sendFile(path.join(__dirname, 'public', 'conductores.html')));
-app.get('/conductores.html', (req, res) => res.sendFile(path.join(__dirname, 'public', 'conductores.html')));
+app.post('/api/conductores/finalizar/:id', authConductor, async (req, res) => {
+  try {
+    const conductor = await Conductor.findById(req.conductor.id);
+    const reserva = await Reserva.findOne({ _id: req.params.id, conductorAsignado: conductor._id.toString() });
+    if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
+    reserva.estado = 'completada';
+    await reserva.save();
+    notificarAdmin({ tipo: 'reserva_completada', numero: numReserva(reserva.numero), conductor: conductor.nombre, fecha: reserva.datos.fecha, hora: reserva.datos.hora });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
 
-
-// ====== PERFIL: ver datos ======
 app.get('/api/conductores/perfil', authConductor, async (req, res) => {
   try {
     const c = await Conductor.findById(req.conductor.id).select('-password -codigoVerificacion -codigoExpira');
     if (!c) return res.status(404).json({ error: 'No encontrado' });
-    res.json({ nombre: c.nombre, telefono: c.telefono, email: c.email, licencia: c.licencia, plaza: c.plaza });
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+    res.json({ nombre: c.nombre, telefono: c.telefono, email: c.email, licencia: c.licencia, plaza: c.plaza, matricula: c.matricula, matriculaEU: c.matriculaEU });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
 
-// ====== PERFIL: cambiar contraseña ======
 app.post('/api/conductores/cambiar-password', authConductor, async (req, res) => {
   try {
     const { actual, nueva } = req.body;
-    if (!actual || !nueva || nueva.length < 6) return res.status(400).json({ error: 'Contraseña nueva debe tener al menos 6 caracteres' });
+    if (!actual || !nueva || nueva.length < 6) return res.status(400).json({ error: 'La contraseña nueva debe tener al menos 6 caracteres' });
     const c = await Conductor.findById(req.conductor.id);
-    const ok = await bcrypt.compare(actual, c.password);
-    if (!ok) return res.status(400).json({ error: 'Contraseña actual incorrecta' });
+    if (!await bcrypt.compare(actual, c.password)) return res.status(400).json({ error: 'Contraseña actual incorrecta' });
     c.password = await bcrypt.hash(nueva, 10);
     await c.save();
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
 
-// ====== COMISIONES del conductor ======
 app.get('/api/conductores/comisiones', authConductor, async (req, res) => {
   try {
-    const c = await Conductor.findById(req.conductor.id);
-    const comisiones = await Comision.find({ conductorChatId: c.chatId }).sort({ fechaCreacion: -1 }).limit(50);
+    const conductor = await Conductor.findById(req.conductor.id);
+    const comisiones = await Comision.find({ conductorId: conductor._id.toString() }).sort({ fechaCreacion: -1 }).limit(50);
     const totalPendiente = comisiones.filter(x => !x.pagada).reduce((s, x) => s + x.comision, 0);
-    res.json({
-      totalPendiente: parseFloat(totalPendiente.toFixed(2)),
-      comisiones: comisiones.map(x => ({
-        mes: x.mes,
-        precioCarrera: x.precioCarrera,
-        comision: x.comision,
-        pagada: x.pagada,
-        fecha: x.fechaCreacion
-      }))
-    });
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+    res.json({ totalPendiente: parseFloat(totalPendiente.toFixed(2)), comisiones: comisiones.map(x => ({ mes: x.mes, precioCarrera: x.precioCarrera, comision: x.comision, pagada: x.pagada, fecha: x.fechaCreacion })) });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
 
-// ====== PUSH: guardar suscripción ======
-app.post('/api/conductores/push-subscribe', authConductor, async (req, res) => {
+// =================== CANCELACIÓN CLIENTE ===================
+app.get('/cancelar', async (req, res) => {
+  const html = (ico, titulo, msg, color) => `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cancelar reserva</title><style>body{font-family:system-ui,sans-serif;background:#0a0a0a;color:#f0f0f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px}.box{max-width:440px;background:#141414;border:1px solid ${color};border-radius:16px;padding:32px;text-align:center}.ico{font-size:54px;margin-bottom:16px}h1{color:${color};font-size:22px;margin:0 0 12px}p{color:#bbb;font-size:15px;line-height:1.6;margin:0 0 20px}.btn{display:inline-block;padding:14px 28px;background:#e05050;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;text-decoration:none}.tel{color:#f5c400;text-decoration:none;font-weight:700}</style></head><body><div class="box"><div class="ico">${ico}</div><h1>${titulo}</h1>${msg}</div></body></html>`;
   try {
-    const { subscription } = req.body;
-    await Conductor.findByIdAndUpdate(req.conductor.id, { pushSubscription: JSON.stringify(subscription) });
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
-});
-
-// ====== PUSH: VAPID keys (para el cliente) ======
-app.get('/api/conductores/vapid-key', (req, res) => {
-  res.json({ publicKey: process.env.VAPID_PUBLIC_KEY || '' });
-});
-
-
-// =================== PANEL ADMIN WEB ===================
-
-// Guardar suscripción push del admin
-let adminPushSubscription = null;
-
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'taxilpa2026';
-const ADMIN_JWT_SECRET = process.env.JWT_SECRET || 'taxi_lpa_secret_2026';
-
-function authAdmin(req, res, next) {
-  const auth = req.headers.authorization || '';
-  const token = auth.replace('Bearer ', '');
-  if (!token) return res.status(401).json({ error: 'No autorizado' });
-  try {
-    const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
-    if (decoded.role !== 'admin') return res.status(403).json({ error: 'No es admin' });
-    next();
-  } catch (e) { return res.status(401).json({ error: 'Token inválido' }); }
-}
-
-// Push subscribe admin
-app.post('/api/admin/push-subscribe', authAdmin, async (req, res) => {
-  try {
-    adminPushSubscription = req.body.subscription;
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
-});
-
-// Login admin
-app.post('/api/admin/login', (req, res) => {
-  const { password } = req.body;
-  if (password !== ADMIN_PASSWORD) return res.status(401).json({ error: 'Contraseña incorrecta' });
-  const token = jwt.sign({ role: 'admin' }, ADMIN_JWT_SECRET, { expiresIn: '7d' });
-  res.json({ ok: true, token });
-});
-
-// Todas las reservas
-app.get('/api/admin/reservas', authAdmin, async (req, res) => {
-  try {
-    const { estado, pagina = 1 } = req.query;
-    const filtro = estado && estado !== 'todas' ? { estado } : {};
-    const total = await Reserva.countDocuments(filtro);
-    const reservas = await Reserva.find(filtro).sort({ fechaCreacion: -1 }).skip((pagina - 1) * 20).limit(20);
-    res.json({
-      total,
-      reservas: reservas.map(r => ({
-        id: r._id.toString(),
-        numero: numReserva(r.numero),
-        estado: r.estado,
-        fecha: r.datos.fecha,
-        hora: r.datos.hora,
-        origen: r.datos.origen,
-        destino: r.datos.destino,
-        pasajeros: r.datos.pasajeros,
-        precio: r.datos.precioEstimado,
-        cliente: r.datos.nombre,
-        telefono: r.datos.telefono,
-        correo: r.datos.correo,
-        notas: r.datos.observaciones,
-        vuelo: r.datos.vuelo,
-        conductor: r.conductorNombre || null,
-        fechaCreacion: r.fechaCreacion
-      }))
-    });
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
-});
-
-// Aceptar reserva como admin (sin comisión)
-app.post('/api/admin/aceptar/:id', authAdmin, async (req, res) => {
-  try {
-    const reserva = await Reserva.findById(req.params.id);
-    if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
-    if (reserva.estado !== 'pendiente') return res.status(400).json({ error: 'La reserva ya no está pendiente' });
-    reserva.estado = 'asignada';
-    reserva.conductorAsignado = OWNER_CHAT_ID;
-    reserva.conductorNombre = 'Administrador';
-    await reserva.save();
-    const eventoId = await crearEventoCalendario(reserva, 'Administrador');
-    if (eventoId) { reserva.eventoCalendarioId = eventoId; await reserva.save(); }
-    await enviarEmailConfirmacion(reserva.datos, reserva._id, 'Administrador', reserva.numero);
-    // Actualizar mensajes de conductores
-    for (const msg of (reserva.mensajesEnviados || [])) {
-      try { bot.editMessageText(`✅ Servicio aceptado por el administrador`, { chat_id: msg.chatId, message_id: msg.messageId }); } catch (e) {}
+    const reserva = await Reserva.findById(req.query.id);
+    if (!reserva) return res.send(html('❓', 'Reserva no encontrada', '<p>El enlace no es válido. Llama al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>', '#888'));
+    if (reserva.estado === 'cancelada') return res.send(html('✅', 'Ya estaba cancelada', '<p>Esta reserva ya figura como cancelada.</p>', '#7dd87d'));
+    if (reserva.fechaServicio) {
+      const mins = (new Date(reserva.fechaServicio) - ahoraCanarias()) / 60000;
+      if (mins < 120) return res.send(html('⏱️', 'No se puede cancelar online', `<p>Tu servicio es demasiado próximo. Llama al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>`, '#f5c400'));
     }
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+    const d = reserva.datos;
+    res.send(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cancelar reserva</title><style>body{font-family:system-ui,sans-serif;background:#0a0a0a;color:#f0f0f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px}.box{max-width:440px;background:#141414;border:1px solid #f5c400;border-radius:16px;padding:32px;text-align:center}.ico{font-size:54px;margin-bottom:16px}h1{color:#f5c400;font-size:22px;margin:0 0 12px}p{color:#bbb;font-size:15px;line-height:1.6;margin:0 0 20px}.btn{display:inline-block;padding:14px 28px;background:#e05050;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;text-decoration:none}</style></head><body><div class="box"><div class="ico">⚠️</div><h1>¿Cancelar tu reserva?</h1><p>📅 ${d.fecha} a las ${d.hora}<br>📍 ${d.origen} → ${d.destino}</p><a class="btn" href="/cancelar-confirmar?id=${req.query.id}">Sí, cancelar reserva</a></div></body></html>`);
+  } catch(e) { res.send(html('❓', 'Enlace no válido', '<p>Llama al <a class="tel" href="tel:+34828810938">828 810 938</a>.</p>', '#888')); }
 });
 
-// Reasignar reserva
-app.post('/api/admin/reasignar/:id', authAdmin, async (req, res) => {
+app.get('/cancelar-confirmar', async (req, res) => {
   try {
-    const idParam = req.params.id;
-    console.log('REASIGNAR llamado con id:', idParam);
-    if (!idParam || idParam === 'null' || idParam === 'undefined') {
-      return res.status(400).json({ error: 'ID de reserva no válido: ' + idParam });
+    const reserva = await Reserva.findById(req.query.id);
+    if (!reserva || reserva.estado === 'cancelada') return res.redirect('/');
+    if (reserva.fechaServicio) {
+      const mins = (new Date(reserva.fechaServicio) - ahoraCanarias()) / 60000;
+      if (mins < 120) return res.redirect('/cancelar?id=' + req.query.id);
     }
-    const reserva = await Reserva.findById(idParam);
-    if (!reserva) return res.status(404).json({ error: 'No encontrada' });
     const conductorAnterior = reserva.conductorAsignado;
-    await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
-    await borrarEventoCalendario(reserva.eventoCalendarioId);
-    for (const msg of (reserva.mensajesEnviados || [])) {
-      try { bot.editMessageText(`🔄 Servicio reasignado por el administrador`, { chat_id: msg.chatId, message_id: msg.messageId, parse_mode: 'Markdown' }); } catch (e) {}
-    }
-    if (conductorAnterior) {
-      try { bot.sendMessage(conductorAnterior, `🔄 El servicio del ${reserva.datos.fecha} a las ${reserva.datos.hora} ha sido reasignado.`); } catch (e) {}
-    }
-    reserva.estado = 'pendiente';
-    reserva.conductorAsignado = null;
-    reserva.conductorNombre = null;
-    reserva.eventoCalendarioId = null;
-    reserva.mensajesEnviados = [];
-    await reserva.save();
-    const todosActivos = await Conductor.find({ activo: true });
-    const sinAnterior = todosActivos.filter(c => String(c.chatId) !== String(conductorAnterior));
-    await enviarReservaA(reserva, sinAnterior);
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
-});
-
-// Cancelar reserva
-app.post('/api/admin/cancelar/:id', authAdmin, async (req, res) => {
-  try {
-    const reserva = await Reserva.findById(req.params.id);
-    if (!reserva) return res.status(404).json({ error: 'No encontrada' });
     reserva.estado = 'cancelada';
     await reserva.save();
-    await borrarEventoCalendario(reserva.eventoCalendarioId);
-    await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
-    const comisionesBorradas = await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
-    if (reserva.conductorAsignado) {
-      try { bot.sendMessage(reserva.conductorAsignado, `❌ *Servicio cancelado por el administrador*\n\n📅 ${reserva.datos.fecha} a las ${reserva.datos.hora}\n📍 ${reserva.datos.origen} → ${reserva.datos.destino}${comisionesBorradas.deletedCount > 0 ? '\n\n💰 La comisión ha sido anulada.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
-    }
-    try { bot.sendMessage(OWNER_CHAT_ID, `❌ *Reserva cancelada desde el panel admin*\n\n${formatearReserva(reserva.datos, true)}${comisionesBorradas.deletedCount > 0 ? '\n💰 Comisión anulada.' : ''}`, { parse_mode: 'Markdown' }); } catch (e) {}
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
-});
-
-// Asignar reserva directamente a un conductor específico
-app.post('/api/admin/asignar-conductor/:id', authAdmin, async (req, res) => {
-  try {
-    const { conductorId } = req.body;
-    if (!conductorId || conductorId === 'null' || conductorId === 'undefined') {
-      return res.status(400).json({ error: 'ID de conductor no válido' });
-    }
-    const reserva = await Reserva.findById(req.params.id);
-    if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
-    const conductor = await Conductor.findById(conductorId);
-    if (!conductor) return res.status(404).json({ error: 'Conductor no encontrado' });
-
-    // Limpiar asignación anterior
-    const conductorAnterior = reserva.conductorAsignado;
     await Comision.deleteMany({ reservaId: reserva._id, pagada: false });
     await borrarEventoCalendario(reserva.eventoCalendarioId);
-    for (const msg of (reserva.mensajesEnviados || [])) {
-      try { bot.editMessageText(`✅ Reserva asignada a ${conductor.nombre} por el administrador`, { chat_id: msg.chatId, message_id: msg.messageId }); } catch (e) {}
-    }
-    if (conductorAnterior && conductorAnterior !== conductor.chatId) {
-      try { bot.sendMessage(conductorAnterior, `🔄 La reserva del ${reserva.datos.fecha} a las ${reserva.datos.hora} ha sido reasignada a otro conductor.`); } catch (e) {}
-    }
+    notificarAdmin({ tipo: 'reserva_cancelada', numero: numReserva(reserva.numero), fecha: reserva.datos.fecha, hora: reserva.datos.hora, motivo: 'Cancelada por el cliente' });
+    if (conductorAnterior) notificarConductores({ tipo: 'reserva_cancelada', numero: numReserva(reserva.numero), fecha: reserva.datos.fecha, hora: reserva.datos.hora }, conductorAnterior);
+    res.send('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cancelada</title><style>body{font-family:system-ui,sans-serif;background:#0a0a0a;color:#f0f0f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px}.box{max-width:440px;background:#141414;border:1px solid #7dd87d;border-radius:16px;padding:32px;text-align:center}.ico{font-size:54px;margin-bottom:16px}h1{color:#7dd87d;font-size:22px;margin:0 0 12px}p{color:#bbb;font-size:15px;line-height:1.6}</style></head><body><div class="box"><div class="ico">✅</div><h1>Reserva cancelada</h1><p>Tu reserva ha sido cancelada correctamente. Esperamos verte pronto.</p></div></body></html>');
+  } catch(e) { res.redirect('/'); }
+});
 
-    // Asignar al nuevo conductor
-    reserva.estado = 'asignada';
-    reserva.conductorAsignado = conductor.chatId;
-    reserva.conductorNombre = conductor.nombre;
-    reserva.mensajesEnviados = [];
-    await reserva.save();
+// =================== RECORDATORIOS ===================
+function iniciarRecordatorios() {
+  setInterval(async () => {
+    try {
+      const ahora = ahoraCanarias();
+      const en60 = new Date(ahora.getTime() + 60 * 60 * 1000);
+      const en55 = new Date(ahora.getTime() + 55 * 60 * 1000);
+      const reservas = await Reserva.find({ estado: 'asignada', recordatorioClienteEnviado: false, fechaServicio: { $gte: en55, $lte: en60 } });
+      for (const r of reservas) {
+        try { await enviarEmailRecordatorio(r); } catch(e) {}
+        r.recordatorioClienteEnviado = true;
+        await r.save();
+      }
+      const hace10 = new Date(Date.now() - 10 * 60 * 1000);
+      const sinAceptar = await Reserva.find({ estado: 'pendiente', avisoSinAceptarEnviado: false, fechaCreacion: { $lte: hace10 } });
+      for (const r of sinAceptar) {
+        notificarAdmin({ tipo: 'reserva_sin_aceptar', numero: numReserva(r.numero), fecha: r.datos.fecha, hora: r.datos.hora, origen: r.datos.origen });
+        r.avisoSinAceptarEnviado = true;
+        await r.save();
+      }
+    } catch(e) { console.error('Error recordatorios:', e.message); }
+  }, 60 * 1000);
+}
 
-    // Crear evento calendario
-    const eventoId = await crearEventoCalendario(reserva, conductor.nombre);
-    if (eventoId) { reserva.eventoCalendarioId = eventoId; await reserva.save(); }
-
-    // Registrar comisión
-    const esPrioritario = String(conductor.licencia) === String(LICENCIA_PRIORITARIA);
-    if (!esPrioritario && reserva.datos.precioEstimado) {
-      const precio = parseFloat(reserva.datos.precioEstimado);
-      await new Comision({
-        conductorChatId: conductor.chatId,
-        conductorNombre: conductor.nombre,
-        reservaId: reserva._id,
-        precioCarrera: precio,
-        comision: parseFloat((precio * COMISION_PORCENTAJE / 100).toFixed(2)),
-        mes: new Date().toISOString().slice(0, 7)
-      }).save();
-    }
-
-    // Avisar al conductor
-    if (!conductor.chatId.startsWith('web_')) {
-      // Conductor de Telegram: enviar mensaje completo
-      const d = reserva.datos;
-      const msgConductor = `✅ *Se te ha asignado una reserva directamente*
-
-` +
-        `🗓️ ${d.fecha}  ·  🕐 ${d.hora} h
-
-` +
-        `🟢 Recogida:
-   ${d.origen}
-` +
-        `🔴 Destino:
-   ${d.destino}
-
-` +
-        `👥 Pasajeros: ${d.pasajeros}
-` +
-        (d.precioEstimado ? `💰 Tarifa estimada: ${d.precioEstimado} €
-` : '') +
-        (d.vuelo ? `✈️ Vuelo: ${d.vuelo}
-` : '') +
-        (d.pasaporte ? `🛂 Pasaporte: ${d.pasaporte}
-` : '') +
-        (d.observaciones ? `📝 Notas: ${d.observaciones}
-` : '') +
-        `
-👤 Cliente: ${d.nombre}`;
-      try { bot.sendMessage(conductor.chatId, msgConductor, { parse_mode: 'Markdown' }); } catch (e) {}
-    } else {
-      // Conductor web: enviar push notification
-      try {
-        if (conductor.pushSubscription && VAPID_PUBLIC && VAPID_PRIVATE) {
-          const d = reserva.datos;
-          await webpush.sendNotification(JSON.parse(conductor.pushSubscription), JSON.stringify({
-            title: `✅ Reserva asignada — ${numReserva(reserva.numero)}`,
-            body: `${d.fecha} ${d.hora} · ${d.origen} → ${d.destino}`
-          }));
+// =================== RESUMEN MENSUAL ===================
+function iniciarResumenMensual() {
+  setInterval(async () => {
+    try {
+      const ahora = ahoraCanarias();
+      if (ahora.getDate() === 1 && ahora.getHours() === 9 && ahora.getMinutes() < 5) {
+        const mesAnterior = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+        const mes = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, '0')}`;
+        const conductores = await Conductor.find({ activo: true, aprobado: true });
+        for (const conductor of conductores) {
+          const comisiones = await Comision.find({ conductorId: conductor._id.toString(), mes });
+          if (!comisiones.length) continue;
+          const totalCarreras = comisiones.reduce((s, c) => s + c.precioCarrera, 0);
+          const totalComision = comisiones.reduce((s, c) => s + c.comision, 0);
+          if (conductor.email && BREVO_API_KEY) {
+            try {
+              await enviarEmailBrevo({
+                sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
+                to: [{ email: conductor.email, name: conductor.nombre }],
+                subject: `Resumen de comisiones — ${mesAnterior.toLocaleString('es-ES', { month: 'long', year: 'numeric' })}`,
+                htmlContent: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px"><h2 style="color:#f5c400">📊 Resumen mensual</h2><p>Hola ${conductor.nombre},</p><p>Has realizado <strong>${comisiones.length} carreras</strong> por un total de <strong>${totalCarreras.toFixed(2)}€</strong>.</p><p>Tu comisión pendiente del mes: <strong style="color:#f5c400;font-size:20px">${totalComision.toFixed(2)}€</strong></p><p>Por favor realiza el ingreso antes del día 7.<br>IBAN: ES07 1583 0001 1790 4940 3249</p></div>`
+              });
+            } catch(e) {}
+          }
         }
-      } catch(e) {}
-    }
+        notificarAdmin({ tipo: 'resumen_mensual', mes });
+      }
+    } catch(e) { console.error('Error resumen mensual:', e.message); }
+  }, 5 * 60 * 1000);
+}
 
-    // Email al cliente
-    await enviarEmailConfirmacion(reserva.datos, reserva._id, conductor.nombre, reserva.numero);
 
-    // Avisar al admin
-    bot.sendMessage(OWNER_CHAT_ID, `✅ *Reserva ${numReserva(reserva.numero)} asignada a ${conductor.nombre}*
-
-${formatearReserva(reserva.datos, true)}`, { parse_mode: 'Markdown' });
-
-    res.json({ ok: true });
-  } catch (e) { console.error('Error asignar-conductor:', e.message); res.status(500).json({ error: e.message || 'Error interno' }); }
-});
-
-// Todos los conductores
-app.get('/api/admin/conductores', authAdmin, async (req, res) => {
+// =================== UBICACIÓN GPS (WebSocket push) ===================
+// El conductor envía su ubicación vía WS directamente (ver wsClients handler)
+// Endpoint para que el cliente consulte la última ubicación conocida
+app.get('/api/reserva/:id/ubicacion', async (req, res) => {
   try {
-    const conductores = await Conductor.find().sort({ fechaRegistro: -1 }).select('-password -codigoVerificacion -codigoExpira -pushSubscription');
-    res.json(conductores.map(c => ({
-      id: c._id.toString(),
-      nombre: c.nombre,
-      licencia: c.licencia,
-      plaza: c.plaza,
-      telefono: c.telefono,
-      email: c.email,
-      aprobado: c.aprobado,
-      activo: c.activo,
-      fechaRegistro: c.fechaRegistro
-    })));
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
-});
-
-// Activar/desactivar conductor
-app.post('/api/admin/conductores/:id/toggle-activo', authAdmin, async (req, res) => {
-  try {
-    const c = await Conductor.findById(req.params.id);
-    if (!c) return res.status(404).json({ error: 'No encontrado' });
-    c.activo = !c.activo;
-    await c.save();
-    // Avisar al conductor por Telegram si tiene chatId real
-    if (c.chatId && !c.chatId.startsWith('web_')) {
-      try {
-        if (c.activo) {
-          bot.sendMessage(c.chatId, `✅ Tu cuenta ha sido *activada*. Ya vuelves a recibir reservas.`, { parse_mode: 'Markdown' });
-        } else {
-          bot.sendMessage(c.chatId, `⏸️ Tu cuenta ha sido *desactivada* temporalmente por el administrador. No recibirás reservas hasta que sea reactivada.`, { parse_mode: 'Markdown' });
-        }
-      } catch(e) {}
-    }
-    res.json({ ok: true, activo: c.activo });
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
-});
-
-// Aprobar conductor
-app.post('/api/admin/conductores/:id/aprobar', authAdmin, async (req, res) => {
-  try {
-    const c = await Conductor.findByIdAndUpdate(req.params.id, { aprobado: true }, { new: true });
-    if (!c) return res.status(404).json({ error: 'No encontrado' });
-    if (c.email && BREVO_API_KEY) {
-      try {
-        await enviarEmailBrevo({
-          sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
-          to: [{ email: c.email, name: c.nombre }],
-          subject: '✅ Tu cuenta ha sido aprobada',
-          htmlContent: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#111;color:#f0f0f0;border-radius:12px;padding:32px"><h2 style="color:#f5c400">🚖 ¡Bienvenido, ${c.nombre}!</h2><p>Tu cuenta ha sido aprobada. Ya puedes entrar en la app:</p><a href="https://reservataxilaspalmas.com/conductores" style="display:inline-block;background:#f5c400;color:#000;padding:12px 24px;border-radius:8px;font-weight:bold;text-decoration:none;margin-top:16px">Entrar a la app</a></div>`
-        });
-      } catch (e) {}
-    }
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
-});
-
-// Eliminar conductor
-app.delete('/api/admin/conductores/:id', authAdmin, async (req, res) => {
-  try {
-    await Conductor.findByIdAndDelete(req.params.id);
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
-});
-
-// Comisiones pendientes por conductor
-app.get('/api/admin/comisiones', authAdmin, async (req, res) => {
-  try {
-    const comisiones = await Comision.find({ pagada: false }).sort({ fechaCreacion: -1 });
-    const porConductor = {};
-    for (const c of comisiones) {
-      if (!porConductor[c.conductorNombre]) porConductor[c.conductorNombre] = { nombre: c.conductorNombre, chatId: c.conductorChatId, total: 0, servicios: 0 };
-      porConductor[c.conductorNombre].total += c.comision;
-      porConductor[c.conductorNombre].servicios++;
-    }
-    res.json(Object.values(porConductor).map(c => ({ ...c, total: parseFloat(c.total.toFixed(2)) })));
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
-});
-
-// Marcar comisiones de un conductor como pagadas
-app.post('/api/admin/comisiones/pagar/:chatId', authAdmin, async (req, res) => {
-  try {
-    await Comision.updateMany({ conductorChatId: req.params.chatId, pagada: false }, { pagada: true });
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
-});
-
-// Estadísticas rápidas
-app.get('/api/admin/stats', authAdmin, async (req, res) => {
-  try {
-    const [pendientes, asignadas, hoy, totalMes] = await Promise.all([
-      Reserva.countDocuments({ estado: 'pendiente' }),
-      Reserva.countDocuments({ estado: 'asignada' }),
-      Reserva.countDocuments({ fechaCreacion: { $gte: new Date(new Date().setHours(0,0,0,0)) } }),
-      Comision.aggregate([{ $match: { pagada: false } }, { $group: { _id: null, total: { $sum: '$comision' } } }])
-    ]);
+    const r = await Reserva.findById(req.params.id).select('estado ubicacionLat ubicacionLng ultimaUbicacion conductorNombre numero datos');
+    if (!r) return res.status(404).json({ error: 'No encontrada' });
     res.json({
-      pendientes,
-      asignadas,
-      hoy,
-      comisionesPendientes: totalMes[0] ? parseFloat(totalMes[0].total.toFixed(2)) : 0
+      estado: r.estado,
+      numero: numReserva(r.numero),
+      lat: r.ubicacionLat,
+      lng: r.ubicacionLng,
+      actualizado: r.ultimaUbicacion,
+      conductor: (r.estado === 'en_camino' || r.estado === 'recogido') ? r.conductorNombre : null,
+      origen: r.datos?.origen || null,
+      destino: r.datos?.destino || null
     });
-  } catch (e) { res.status(500).json({ error: 'Error interno' }); }
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
 
-// Servir panel admin
-app.get('/admin', (req, res) => {
-  res.setHeader('Cache-Control','no-store,no-cache,must-revalidate,proxy-revalidate');
-  res.setHeader('Pragma','no-cache');
-  res.setHeader('Expires','0');
-  res.setHeader('Surrogate-Control','no-store');
-  const fs = require('fs');
-  const adminPath = path.join(__dirname, 'public', 'admin.html');
-  fs.readFile(adminPath, 'utf8', (err, data) => {
-    if (err) return res.status(500).send('Error loading admin panel');
-    res.setHeader('Content-Type','text/html; charset=utf-8');
-    res.send(data);
+// Conductor: voy en camino
+app.post('/api/conductores/en-camino/:id', authConductor, async (req, res) => {
+  try {
+    const conductor = await Conductor.findById(req.conductor.id);
+    const reserva = await Reserva.findOne({ _id: req.params.id, conductorAsignado: conductor._id.toString() });
+    if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
+    if (reserva.estado !== 'asignada') return res.status(400).json({ error: 'Estado incorrecto' });
+    reserva.estado = 'en_camino';
+    // Mantener orden lógico: si el recordatorio de "llega en 1 hora" aún no se envió,
+    // se envía justo antes que el de "en camino" para que el cliente lo reciba primero.
+    if (!reserva.recordatorioClienteEnviado) {
+      try { await enviarEmailRecordatorio(reserva); } catch(e) {}
+      reserva.recordatorioClienteEnviado = true;
+    }
+    await reserva.save();
+    // Notificar al cliente y admin por WS
+    notificarAdmin({ tipo: 'conductor_en_camino', numero: numReserva(reserva.numero), conductor: conductor.nombre });
+    notificarCliente(reserva._id.toString(), { tipo: 'conductor_en_camino', numero: numReserva(reserva.numero), conductor: conductor.nombre });
+    // Email al cliente (siempre después del recordatorio, si lo hubo)
+    try { await enviarEmailEstado(reserva, 'en_camino', conductor.nombre); } catch(e) {}
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Conductor: cliente recogido
+app.post('/api/conductores/recogido/:id', authConductor, async (req, res) => {
+  try {
+    const conductor = await Conductor.findById(req.conductor.id);
+    const reserva = await Reserva.findOne({ _id: req.params.id, conductorAsignado: conductor._id.toString() });
+    if (!reserva) return res.status(404).json({ error: 'Reserva no encontrada' });
+    if (reserva.estado !== 'en_camino') return res.status(400).json({ error: 'Estado incorrecto' });
+    reserva.estado = 'recogido';
+    reserva.ubicacionLat = null;
+    reserva.ubicacionLng = null;
+    await reserva.save();
+    notificarAdmin({ tipo: 'cliente_recogido', numero: numReserva(reserva.numero), conductor: conductor.nombre });
+    notificarCliente(reserva._id.toString(), { tipo: 'cliente_recogido', numero: numReserva(reserva.numero) });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// =================== ADMIN TARIFAS ===================
+app.get('/api/admin/tarifas', authAdmin, async (req, res) => {
+  try { res.json(await Tarifa.find()); } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.put('/api/admin/tarifas/:nombre', authAdmin, async (req, res) => {
+  try {
+    const t = await Tarifa.findOneAndUpdate({ nombre: req.params.nombre }, { valor: req.body.valor }, { new: true });
+    if (!t) return res.status(404).json({ error: 'Tarifa no encontrada' });
+    res.json({ ok: true, tarifa: t });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Configuración de la antelación mínima para reservar
+app.get('/api/admin/antelacion', authAdmin, async (req, res) => {
+  try { res.json({ horas: cacheConfig.antelacion }); }
+  catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.put('/api/admin/antelacion', authAdmin, async (req, res) => {
+  try {
+    const horas = parseFloat(req.body.horas);
+    if (isNaN(horas) || horas < 0) return res.status(400).json({ error: 'Valor no válido' });
+    await Config.findOneAndUpdate({ nombre: 'antelacion' }, { valor: horas }, { upsert: true });
+    cacheConfig.antelacion = horas;
+    res.json({ ok: true, horas });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Configuración de la ventana de prioridad (minutos exclusivos para LICENCIA_PRIORITARIA)
+app.get('/api/admin/prioridad', authAdmin, async (req, res) => {
+  try { res.json({ minutos: cacheConfig.prioridadMinutos }); }
+  catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.put('/api/admin/prioridad', authAdmin, async (req, res) => {
+  try {
+    const minutos = parseFloat(req.body.minutos);
+    if (isNaN(minutos) || minutos < 0) return res.status(400).json({ error: 'Valor no válido' });
+    await Config.findOneAndUpdate({ nombre: 'prioridadMinutos' }, { valor: minutos }, { upsert: true });
+    cacheConfig.prioridadMinutos = minutos;
+    res.json({ ok: true, minutos });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Tarifas públicas para el formulario de reserva
+app.get('/api/tarifas', async (req, res) => {
+  try {
+    const tarifas = await Tarifa.find();
+    const obj = {};
+    tarifas.forEach(t => obj[t.nombre] = t.valor);
+    res.json(obj);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// =================== ADMIN VEHÍCULOS ===================
+app.get('/api/admin/vehiculos', authAdmin, async (req, res) => {
+  try {
+    const vehiculos = await Vehiculo.find().sort({ orden: 1, fechaCreacion: 1 });
+    res.json(vehiculos);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/vehiculos', authAdmin, async (req, res) => {
+  try {
+    const { nombre, descripcion, plazas, maletasGrandes, maletasPequenas, suplemento, foto } = req.body;
+    if (!nombre || !plazas) return res.status(400).json({ error: 'Faltan datos obligatorios' });
+    const count = await Vehiculo.countDocuments();
+    const v = await new Vehiculo({
+      nombre, descripcion: descripcion || '',
+      plazas: parseInt(plazas) || 4,
+      maletasGrandes: parseInt(maletasGrandes) || 0,
+      maletasPequenas: parseInt(maletasPequenas) || 0,
+      suplemento: parseFloat(suplemento) || 0,
+      foto: foto || '',
+      orden: count
+    }).save();
+    res.json({ ok: true, vehiculo: v });
+  } catch(e) { console.error('Error crear vehiculo:', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.put('/api/admin/vehiculos/:id', authAdmin, async (req, res) => {
+  try {
+    const { nombre, descripcion, plazas, maletasGrandes, maletasPequenas, suplemento, foto } = req.body;
+    const update = {
+      nombre, descripcion: descripcion || '',
+      plazas: parseInt(plazas) || 4,
+      maletasGrandes: parseInt(maletasGrandes) || 0,
+      maletasPequenas: parseInt(maletasPequenas) || 0,
+      suplemento: parseFloat(suplemento) || 0
+    };
+    if (foto) update.foto = foto;
+    const v = await Vehiculo.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!v) return res.status(404).json({ error: 'No encontrado' });
+    res.json({ ok: true, vehiculo: v });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/vehiculos/:id/toggle-activo', authAdmin, async (req, res) => {
+  try {
+    const v = await Vehiculo.findById(req.params.id);
+    if (!v) return res.status(404).json({ error: 'No encontrado' });
+    v.activo = !v.activo;
+    await v.save();
+    res.json({ ok: true, activo: v.activo });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.delete('/api/admin/vehiculos/:id', authAdmin, async (req, res) => {
+  try {
+    await Vehiculo.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Listado público de vehículos activos (para el formulario de reserva)
+app.get('/api/vehiculos', async (req, res) => {
+  try {
+    const vehiculos = await Vehiculo.find({ activo: true }).sort({ orden: 1, fechaCreacion: 1 });
+    res.json(vehiculos);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// =================== ADMIN FESTIVOS Y DÍAS SIN SERVICIO ===================
+app.get('/api/admin/festivos', authAdmin, async (req, res) => {
+  try { res.json(await Festivo.find().sort({ fecha: 1 })); } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/festivos', authAdmin, async (req, res) => {
+  try {
+    const { fecha, descripcion, tipo, suplementoPlus, horaInicio, horaFin } = req.body;
+    if (!fecha) return res.status(400).json({ error: 'Falta la fecha' });
+    const tipoValido = ['festivo', 'festivo_plus', 'sin_servicio'].includes(tipo) ? tipo : 'festivo';
+    const f = await Festivo.findOneAndUpdate(
+      { fecha },
+      {
+        descripcion: descripcion || 'Festivo',
+        tipo: tipoValido,
+        suplementoPlus: tipoValido === 'festivo_plus' ? (parseFloat(suplementoPlus)||0) : 0,
+        horaInicio: tipoValido === 'sin_servicio' ? (horaInicio || '') : '',
+        horaFin: tipoValido === 'sin_servicio' ? (horaFin || '') : ''
+      },
+      { upsert: true, new: true }
+    );
+    res.json({ ok: true, festivo: f });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.delete('/api/admin/festivos/:fecha', authAdmin, async (req, res) => {
+  try {
+    await Festivo.deleteOne({ fecha: req.params.fecha });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Festivos públicos para validación en formulario
+app.get('/api/festivos', async (req, res) => {
+  try { res.json(await Festivo.find().sort({ fecha: 1 })); } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// =================== ADMIN CONDUCTORES EXTENDIDO ===================
+app.put('/api/admin/conductores/:id', authAdmin, async (req, res) => {
+  try {
+    const { nombre, telefono, email, licencia, plaza, matricula, matriculaEU, comisionPorcentaje } = req.body;
+    const c = await Conductor.findByIdAndUpdate(req.params.id, { nombre, telefono, email, licencia, plaza, matricula, matriculaEU, comisionPorcentaje: parseFloat(comisionPorcentaje) || 10 }, { new: true });
+    if (!c) return res.status(404).json({ error: 'No encontrado' });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// =================== WEBSOCKET ===================
+const httpServer = http.createServer(app);
+const wss = new WebSocket.Server({ server: httpServer });
+const wsClients = new Set();
+
+wss.on('connection', (ws) => {
+  ws.isAlive = true;
+  ws.tipo = null;
+  wsClients.add(ws);
+  ws.on('message', (raw) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg.tipo === 'auth_admin') {
+        try { const dec = jwt.verify(msg.token, JWT_SECRET); if (dec.role === 'admin') ws.tipo = 'admin'; } catch(e) {}
+      } else if (msg.tipo === 'auth_conductor') {
+        try { const dec = jwt.verify(msg.token, JWT_SECRET); ws.tipo = 'conductor'; ws.conductorId = dec.id; } catch(e) {}
+      } else if (msg.tipo === 'auth_cliente') {
+        if (msg.reservaId) { ws.tipo = 'cliente'; ws.reservaId = msg.reservaId; clientesReserva.set(msg.reservaId, ws); }
+      } else if (msg.tipo === 'ubicacion_gps') {
+        if (msg.reservaId && typeof msg.lat === 'number' && typeof msg.lng === 'number') {
+          // Guardar en DB
+          Reserva.findByIdAndUpdate(msg.reservaId, { ubicacionLat: msg.lat, ubicacionLng: msg.lng, ultimaUbicacion: new Date() }).catch(e => console.error('Error guardando ubicación GPS:', e.message));
+          // Notificar al cliente que sigue esta reserva
+          notificarCliente(msg.reservaId, { tipo: 'ubicacion_gps', lat: msg.lat, lng: msg.lng });
+          // Notificar también al admin
+          notificarAdmin({ tipo: 'ubicacion_gps', reservaId: msg.reservaId, lat: msg.lat, lng: msg.lng });
+        }
+      } else if (msg.tipo === 'ping') {
+        try { ws.send(JSON.stringify({ tipo: 'pong' })); } catch(e) {}
+      }
+    } catch(e) {}
   });
-});
-app.get('/admin.html', (req, res) => {
-  res.setHeader('Cache-Control','no-store,no-cache,must-revalidate,proxy-revalidate');
-  res.setHeader('Pragma','no-cache');
-  res.setHeader('Expires','0');
-  const fs = require('fs');
-  const adminPath = path.join(__dirname, 'public', 'admin.html');
-  fs.readFile(adminPath, 'utf8', (err, data) => {
-    if (err) return res.status(500).send('Error loading admin panel');
-    res.setHeader('Content-Type','text/html; charset=utf-8');
-    res.send(data);
+  ws.on('pong', () => { ws.isAlive = true; });
+  ws.on('close', () => {
+    wsClients.delete(ws);
+    if (ws.reservaId && clientesReserva.get(ws.reservaId) === ws) clientesReserva.delete(ws.reservaId);
   });
+  ws.on('error', () => wsClients.delete(ws));
 });
 
+setInterval(() => {
+  for (const ws of wsClients) {
+    if (!ws.isAlive) { ws.terminate(); wsClients.delete(ws); continue; }
+    ws.isAlive = false;
+    try { ws.ping(); } catch(e) {}
+  }
+}, 30000);
 
+// Mapa de reservaId -> wsClient del cliente (para tracking GPS)
+const clientesReserva = new Map();
+
+function notificarCliente(reservaId, evento) {
+  const ws = clientesReserva.get(reservaId);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try { ws.send(JSON.stringify(evento)); } catch(e) {}
+  }
+}
+
+async function enviarEmailEstado(reserva, estado, nombreConductor) {
+  if (!reserva.datos.correo || !BREVO_API_KEY) return;
+  const idioma = ['es','en','de'].includes(reserva.datos.idioma) ? reserva.datos.idioma : 'es';
+  const msgs = {
+    es: { en_camino: { sub: '🚖 Tu conductor está en camino', body: (id, num) => '<p>Tu conductor <strong>' + nombreConductor + '</strong> está en camino a recogerte.</p><p><a href="' + APP_URL + '/seguimiento?id=' + id + '" style="display:inline-block;background:#f5b800;color:#1a1d29;padding:14px 28px;border-radius:10px;font-weight:800;text-decoration:none;font-size:15px;">📍 Ver ubicación en tiempo real</a></p><p>Nº reserva: <strong>' + num + '</strong></p>' } },
+    en: { en_camino: { sub: '🚖 Your driver is on the way', body: (id, num) => '<p>Your driver <strong>' + nombreConductor + '</strong> is on the way.</p><p><a href="' + APP_URL + '/seguimiento?id=' + id + '" style="display:inline-block;background:#f5b800;color:#1a1d29;padding:14px 28px;border-radius:10px;font-weight:800;text-decoration:none;font-size:15px;">📍 Track in real time</a></p><p>Booking: <strong>' + num + '</strong></p>' } },
+    de: { en_camino: { sub: '🚖 Ihr Fahrer ist unterwegs', body: (id, num) => '<p>Ihr Fahrer <strong>' + nombreConductor + '</strong> ist unterwegs.</p><p><a href="' + APP_URL + '/seguimiento?id=' + id + '" style="display:inline-block;background:#f5b800;color:#1a1d29;padding:14px 28px;border-radius:10px;font-weight:800;text-decoration:none;font-size:15px;">📍 Standort verfolgen</a></p><p>Buchung: <strong>' + num + '</strong></p>' } }
+  };
+  const T = (msgs[idioma] || msgs.es)[estado];
+  if (!T) return;
+  const bodyHtml = typeof T.body === 'function'
+    ? T.body(reserva._id.toString(), numReserva(reserva.numero))
+    : T.body;
+  await enviarEmailBrevo({
+    sender: { name: 'Reserva Taxi Las Palmas', email: 'reservadetaxilp@gmail.com' },
+    to: [{ email: reserva.datos.correo, name: reserva.datos.nombre }],
+    subject: T.sub,
+    htmlContent: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f9f9f9;max-width:600px;margin:0 auto;">
+      <div style="background:#1a1a1a;padding:16px 20px;border-radius:12px;margin-bottom:20px;display:flex;align-items:center;gap:12px;">
+        <span style="font-size:28px;">🚖</span>
+        <span style="color:#f5b800;font-size:18px;font-weight:800;">Reserva Taxi Las Palmas</span>
+      </div>
+      <p style="font-size:15px;color:#2b2f3a;margin-bottom:16px;">Hola <strong>${reserva.datos.nombre}</strong>,</p>
+      <p style="font-size:15px;color:#2b2f3a;line-height:1.6;margin-bottom:20px;">${bodyHtml}</p>
+      <div style="background:#f5f7fb;border-radius:10px;padding:14px 16px;margin-bottom:20px;font-size:14px;color:#5c6373;">
+        <div>📅 <strong>${reserva.datos.fecha}</strong> a las <strong>${reserva.datos.hora}</strong></div>
+        <div style="margin-top:6px;">📍 ${reserva.datos.origen}</div>
+        <div style="margin-top:4px;">🏁 ${reserva.datos.destino}</div>
+      </div>
+      <p style="font-size:13px;color:#5c6373;">📞 <strong>828 810 938</strong> · reservas@taxilaspalmasdegrancanaria.com</p>
+    </div>`
+  });
+}
+
+function payloadPushParaEvento(evento, contexto) {
+  const url = contexto === 'admin' ? '/admin.html' : '/conductores.html';
+  const mapas = {
+    nueva_reserva:      { title: '🚖 Nueva reserva', body: `${evento.numero||''} — ${evento.fecha||''} ${evento.hora||''}${evento.destino?' · '+evento.destino:''}` },
+    reserva_cancelada:  { title: '❌ Reserva cancelada', body: `${evento.numero||''}${evento.motivo?': '+evento.motivo:''}` },
+    reserva_asignada:   { title: '📋 Servicio asignado', body: `${evento.numero||''} — ${evento.fecha||''} ${evento.hora||''}` },
+    servicio_asignado:  { title: '📋 Servicio asignado', body: `${evento.numero||''} — ${evento.fecha||''} ${evento.hora||''}` },
+    reserva_reasignada: { title: '🔄 Reserva reasignada', body: `${evento.numero||''}` },
+    conductor_aceptado: { title: '✅ Conductor asignado', body: `${evento.conductor||''} aceptó ${evento.numero||''}` }
+  };
+  const base = mapas[evento.tipo] || { title: 'Reserva Taxi Las Palmas', body: 'Tienes una actualización' };
+  return { ...base, tag: evento.tipo || 'aviso', url, ts: Date.now() };
+}
+
+function notificarAdmin(evento) {
+  const p = JSON.stringify(evento);
+  for (const ws of wsClients)
+    if (ws.tipo === 'admin' && ws.readyState === WebSocket.OPEN) try { ws.send(p); } catch(e) {}
+  enviarPushA('admin', payloadPushParaEvento(evento, 'admin'));
+}
+
+function notificarConductores(evento, soloId) {
+  const p = JSON.stringify(evento);
+  for (const ws of wsClients) {
+    if (ws.tipo !== 'conductor' || ws.readyState !== WebSocket.OPEN) continue;
+    if (soloId && ws.conductorId !== soloId) continue;
+    try { ws.send(p); } catch(e) {}
+  }
+  const pushPayload = payloadPushParaEvento(evento, 'conductor');
+  if (soloId) enviarPushA(soloId, pushPayload);
+  else enviarPushATodosConductores(pushPayload);
+}
+
+httpServer.listen(PORT, () => console.log(`Servidor en puerto ${PORT} — HTTP + WebSocket`));
