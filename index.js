@@ -660,19 +660,23 @@ app.post('/calcular-tarifa', async (req, res) => {
       if (bloqueo) return res.json({ ok: false, error: bloqueo });
     }
 
-    // Obtener distancia de Google Maps
-    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origenCoords}&destinations=${destinoCoords}&mode=driving&key=${GOOGLE_MAPS_KEY}`;
+    // Obtener distancia de Google Maps usando Directions API con alternativas para elegir la más corta
+    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origenCoords}&destination=${destinoCoords}&mode=driving&alternatives=true&key=${GOOGLE_MAPS_KEY}`;
     const mapsRes = await new Promise((resolve, reject) => {
       https.get(url, (r) => {
         let d = ''; r.on('data', c => d += c); r.on('end', () => resolve(JSON.parse(d)));
       }).on('error', reject);
     });
-    const elem = mapsRes.rows?.[0]?.elements?.[0];
-    if (!elem || elem.status !== 'OK') return res.json({ ok: false, error: 'No se pudo calcular la ruta' });
-    const distanciaKmBruta = elem.distance.value / 1000;
+    if (!mapsRes.routes || mapsRes.routes.length === 0) return res.json({ ok: false, error: 'No se pudo calcular la ruta' });
+    // Elegir la ruta con MENOS kilómetros entre todas las alternativas
+    const rutaMasCorta = mapsRes.routes.reduce((min, ruta) => {
+      const dist = ruta.legs.reduce((s, l) => s + l.distance.value, 0);
+      return dist < min.distancia ? { distancia: dist, ruta } : min;
+    }, { distancia: Infinity, ruta: null }).ruta;
+    const distanciaKmBruta = rutaMasCorta.legs.reduce((s, l) => s + l.distance.value, 0) / 1000;
     const REDUCCION_KM = 1.5;
     const distanciaKm = Math.max(0, distanciaKmBruta - REDUCCION_KM);
-    console.log(`[DISTANCIA] Google: ${distanciaKmBruta.toFixed(2)} km → Aplicando reducción de ${REDUCCION_KM} km → Final: ${distanciaKm.toFixed(2)} km`);
+    console.log(`[DISTANCIA] Rutas disponibles: ${mapsRes.routes.length} → Más corta: ${distanciaKmBruta.toFixed(2)} km → Tras reducción: ${distanciaKm.toFixed(2)} km`);
 
     const DISTANCIA_MINIMA_KM = 10;
     if (!esAdmin && distanciaKm < DISTANCIA_MINIMA_KM) {
