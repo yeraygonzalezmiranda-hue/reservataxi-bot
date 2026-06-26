@@ -669,7 +669,10 @@ app.post('/calcular-tarifa', async (req, res) => {
     });
     const elem = mapsRes.rows?.[0]?.elements?.[0];
     if (!elem || elem.status !== 'OK') return res.json({ ok: false, error: 'No se pudo calcular la ruta' });
-    const distanciaKm = Math.max(0, (elem.distance.value / 1000) - 1.5); // Restar 1.5 km al total
+    const distanciaKmBruta = elem.distance.value / 1000;
+    const REDUCCION_KM = 1.5;
+    const distanciaKm = Math.max(0, distanciaKmBruta - REDUCCION_KM);
+    console.log(`[DISTANCIA] Google: ${distanciaKmBruta.toFixed(2)} km → Aplicando reducción de ${REDUCCION_KM} km → Final: ${distanciaKm.toFixed(2)} km`);
 
     const DISTANCIA_MINIMA_KM = 10;
     if (!esAdmin && distanciaKm < DISTANCIA_MINIMA_KM) {
